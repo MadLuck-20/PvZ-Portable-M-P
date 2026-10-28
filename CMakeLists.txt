@@ -294,6 +294,8 @@ elseif (IOS)
 		"-framework AVFoundation"
 		"-framework AudioToolbox"
 		"-framework Metal"
+		"-framework CoreHaptics"
+		"-framework CoreBluetooth"
 	)
 
 	configure_file(ios/Info.plist.in "${CMAKE_CURRENT_BINARY_DIR}/Info.plist" @ONLY)
