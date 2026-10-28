@@ -541,25 +541,6 @@ void SexyAppBase::SetTextInputRect(const Rect& theRect)
 
 bool SexyAppBase::ProcessDeferredMessages(bool singleMessage)
 {
-#if defined(__APPLE__)
-	// iOS: the drawable size can change after launch (rotation to landscape)
-	// without a resize event reaching us. Re-sync the viewport when it changes.
-	if (mWindow != nullptr && mGLInterface != nullptr && mWidgetManager != nullptr)
-	{
-		static int sLastDrawW = 0, sLastDrawH = 0;
-		int aDrawW = 0, aDrawH = 0;
-		SDL_GL_GetDrawableSize((SDL_Window*)mWindow, &aDrawW, &aDrawH);
-		if (aDrawW > 0 && aDrawH > 0 && (aDrawW != sLastDrawW || aDrawH != sLastDrawH))
-		{
-			sLastDrawW = aDrawW;
-			sLastDrawH = aDrawH;
-			mGLInterface->UpdateViewport();
-			mWidgetManager->Resize(mScreenBounds, mGLInterface->mPresentationRect);
-			mWidgetManager->MarkAllDirty();
-		}
-	}
-#endif
-
 #ifdef __EMSCRIPTEN__
 	if (!mPlayingDemoBuffer)
 	{
@@ -671,7 +652,6 @@ bool SexyAppBase::ProcessDeferredMessages(bool singleMessage)
 						break;
 
 					case SDL_WINDOWEVENT_RESIZED:
-					case SDL_WINDOWEVENT_SIZE_CHANGED:
 						mGLInterface->UpdateViewport();
 						mWidgetManager->Resize(mScreenBounds, mGLInterface->mPresentationRect);
 						mWidgetManager->MarkAllDirty();
