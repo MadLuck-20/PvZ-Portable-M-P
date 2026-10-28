@@ -1,0 +1,169 @@
+diff -ruN orig/src/Lawn/Board.cpp PvZ-Portable-main/src/Lawn/Board.cpp
+--- orig/src/Lawn/Board.cpp	2026-10-28 07:52:25.122013905 +0000
++++ PvZ-Portable-main/src/Lawn/Board.cpp	2026-10-28 07:52:25.260845514 +0000
+@@ -31,6 +31,7 @@
+ #include "Widget/LawnDialog.h"
+ #include "System/PlayerInfo.h"
+ #include "System/PoolEffect.h"
++#include "System/Player2Input.h"
+ #include "System/TypingCheck.h"
+ #include "Widget/StoreScreen.h"
+ #include "Widget/AwardScreen.h"
+@@ -5696,6 +5697,7 @@
+ 
+ 	Widget::Update();
+ 	MarkDirty();
++	Player2Input::Update();
+ 
+ 	mBoardUpdateCounter++;
+ 	mCutScene->Update();
+@@ -7372,6 +7374,8 @@
+ 
+ void Board::DrawUITop(Graphics* g)
+ {
++	Player2Input::Draw(g);
++
+ 	if (StageHasFog())
+ 	{
+ 		DrawTopRightUI(g);
+diff -ruN orig/src/Lawn/System/Player2Input.cpp PvZ-Portable-main/src/Lawn/System/Player2Input.cpp
+--- orig/src/Lawn/System/Player2Input.cpp	1970-01-01 00:00:00.000000000 +0000
++++ PvZ-Portable-main/src/Lawn/System/Player2Input.cpp	2026-10-28 07:52:36.644450284 +0000
+@@ -0,0 +1,74 @@
++#include "Player2Input.h"
++#include "../../GameConstants.h"
++#include "../../SexyAppFramework/graphics/Graphics.h"
++#include <algorithm>
++#include <cmath>
++
++using namespace Sexy;
++
++static SDL_GameController*	gController = nullptr;
++static float				gCursorX = BOARD_WIDTH / 2.0f;
++static float				gCursorY = BOARD_HEIGHT / 2.0f;
++
++static constexpr float		kDeadZone = 0.20f;
++static constexpr float		kSpeedPixelsPerUpdate = 7.0f;
++
++static float NormalizeAxis(Sint16 theRaw)
++{
++	float aValue = theRaw / 32767.0f;
++	if (std::fabs(aValue) < kDeadZone)
++		return 0.0f;
++	return std::clamp(aValue, -1.0f, 1.0f);
++}
++
++void Player2Input::OnDeviceAdded(int theDeviceIndex)
++{
++	if (gController != nullptr)
++		return; // only one P2 pad for now
++	if (!SDL_IsGameController(theDeviceIndex))
++		return;
++	gController = SDL_GameControllerOpen(theDeviceIndex);
++}
++
++void Player2Input::OnDeviceRemoved(SDL_JoystickID theInstanceID)
++{
++	if (gController == nullptr)
++		return;
++	SDL_Joystick* aJoy = SDL_GameControllerGetJoystick(gController);
++	if (aJoy != nullptr && SDL_JoystickInstanceID(aJoy) == theInstanceID)
++	{
++		SDL_GameControllerClose(gController);
++		gController = nullptr;
++	}
++}
++
++bool Player2Input::IsConnected()
++{
++	return gController != nullptr;
++}
++
++void Player2Input::Update()
++{
++	if (gController == nullptr)
++		return;
++
++	float aDX = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTX));
++	float aDY = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTY));
++	gCursorX = std::clamp(gCursorX + aDX * kSpeedPixelsPerUpdate, 0.0f, (float)BOARD_WIDTH);
++	gCursorY = std::clamp(gCursorY + aDY * kSpeedPixelsPerUpdate, 0.0f, (float)BOARD_HEIGHT);
++}
++
++int Player2Input::GetX() { return (int)gCursorX; }
++int Player2Input::GetY() { return (int)gCursorY; }
++
++void Player2Input::Draw(Sexy::Graphics* g)
++{
++	if (gController == nullptr)
++		return;
++
++	// Simple crosshair so P2 is visually distinct from the touch/mouse cursor.
++	int x = GetX(), y = GetY();
++	g->SetColor(Color(0, 160, 255, 230));
++	g->FillRect(x - 12, y - 2, 24, 4);
++	g->FillRect(x - 2, y - 12, 4, 24);
++}
+diff -ruN orig/src/Lawn/System/Player2Input.h PvZ-Portable-main/src/Lawn/System/Player2Input.h
+--- orig/src/Lawn/System/Player2Input.h	1970-01-01 00:00:00.000000000 +0000
++++ PvZ-Portable-main/src/Lawn/System/Player2Input.h	2026-10-28 07:52:36.644029361 +0000
+@@ -0,0 +1,25 @@
++#ifndef __PLAYER2INPUT_H__
++#define __PLAYER2INPUT_H__
++
++#include <SDL.h>
++
++namespace Sexy { class Graphics; }
++
++// Second-player gamepad input (co-op groundwork).
++// Step 1: detect a controller and drive a free cursor with the left stick.
++// Board-side actions (plant, collect sun) come in later steps.
++class Player2Input
++{
++public:
++	static void		OnDeviceAdded(int theDeviceIndex);
++	static void		OnDeviceRemoved(SDL_JoystickID theInstanceID);
++
++	static bool		IsConnected();
++	static void		Update();					// call once per Board::Update
++	static void		Draw(Sexy::Graphics* g);			// call from Board::DrawUITop
++
++	static int		GetX();						// board coordinates
++	static int		GetY();
++};
++
++#endif
+diff -ruN orig/src/SexyAppFramework/platform/default/Input.cpp PvZ-Portable-main/src/SexyAppFramework/platform/default/Input.cpp
+--- orig/src/SexyAppFramework/platform/default/Input.cpp	2026-10-28 07:52:25.130565090 +0000
++++ PvZ-Portable-main/src/SexyAppFramework/platform/default/Input.cpp	2026-10-28 07:52:25.258447277 +0000
+@@ -22,6 +22,7 @@
+  * along with PvZ-Portable. If not, see <https://www.gnu.org/licenses/>.
+  */
+ 
++#include "../../../Lawn/System/Player2Input.h"
+ #include <SDL.h>
+ 
+ #include <algorithm>
+@@ -333,6 +334,7 @@
+ void SexyAppBase::InitInput()
+ {
+ 	SDL_Init(SDL_INIT_EVENTS);
++	SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
+ }
+ 
+ static void RecordDemoMousePosition(SexyAppBase* theApp, int theX, int theY)
+@@ -619,6 +621,14 @@
+ 
+ 		switch(event.type)
+ 		{
++			case SDL_CONTROLLERDEVICEADDED:
++				Player2Input::OnDeviceAdded(event.cdevice.which);
++				break;
++
++			case SDL_CONTROLLERDEVICEREMOVED:
++				Player2Input::OnDeviceRemoved(event.cdevice.which);
++				break;
++
+ 			case SDL_QUIT:
+ 				CloseRequestAsync();
+ 				break;
