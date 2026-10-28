@@ -59,6 +59,12 @@ void SexyAppBase::MakeWindow()
 		Uint32 winFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
 			| (!mIsWindowed ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
 
+#if defined(__IPHONEOS__)
+		// iOS: a non-resizable window lets SDL match the window size to the requested
+		// (landscape) orientation at creation instead of using a transient portrait frame.
+		winFlags &= ~static_cast<Uint32>(SDL_WINDOW_RESIZABLE);
+#endif
+
 		using WindowPtr = std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)>;
 		using GLContextPtr = std::unique_ptr<std::remove_pointer_t<SDL_GLContext>, decltype(&SDL_GL_DeleteContext)>;
 
