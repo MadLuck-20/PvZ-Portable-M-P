@@ -31,6 +31,7 @@
 #include "Widget/LawnDialog.h"
 #include "System/PlayerInfo.h"
 #include "System/PoolEffect.h"
+#include "System/Player2Input.h"
 #include "System/TypingCheck.h"
 #include "Widget/StoreScreen.h"
 #include "Widget/AwardScreen.h"
@@ -5696,6 +5697,7 @@ void Board::Update()
 
 	Widget::Update();
 	MarkDirty();
+	Player2Input::Update();
 
 	mBoardUpdateCounter++;
 	mCutScene->Update();
@@ -7372,6 +7374,8 @@ bool Board::IsScaryPotterDaveTalking()
 
 void Board::DrawUITop(Graphics* g)
 {
+	Player2Input::Draw(g);
+
 	if (StageHasFog())
 	{
 		DrawTopRightUI(g);
