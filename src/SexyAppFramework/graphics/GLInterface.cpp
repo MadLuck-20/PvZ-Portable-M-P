@@ -23,6 +23,7 @@
  */
 
 #define GLAD_GLES2_IMPLEMENTATION
+#include <utility>
 #include "graphics/GLPlatform.h"
 
 #include <SDL.h>
@@ -1231,6 +1232,12 @@ void GLInterface::UpdateViewport()
 #else
 	int width, height;
 	SDL_GL_GetDrawableSize((SDL_Window*)mApp->mWindow, &width, &height);
+#if defined(__IPHONEOS__)
+	// The app is landscape-only. SDL can report a stale portrait size right
+	// after launch/rotation; a landscape app never has height > width.
+	if (height > width)
+		std::swap(width, height);
+#endif
 #endif
 
 	vw = width; vh = height;
