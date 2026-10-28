@@ -1,6 +1,6 @@
-diff -ruN orig/src/Lawn/Board.cpp PvZ-Portable-main/src/Lawn/Board.cpp
---- orig/src/Lawn/Board.cpp	2026-10-28 07:52:25.122013905 +0000
-+++ PvZ-Portable-main/src/Lawn/Board.cpp	2026-10-28 07:52:25.260845514 +0000
+diff -ruN a/src/Lawn/Board.cpp b/src/Lawn/Board.cpp
+--- a/src/Lawn/Board.cpp	2026-10-28 07:52:25.122013905 +0000
++++ b/src/Lawn/Board.cpp	2026-10-28 08:24:10.885590170 +0000
 @@ -31,6 +31,7 @@
  #include "Widget/LawnDialog.h"
  #include "System/PlayerInfo.h"
@@ -26,9 +26,9 @@ diff -ruN orig/src/Lawn/Board.cpp PvZ-Portable-main/src/Lawn/Board.cpp
  	if (StageHasFog())
  	{
  		DrawTopRightUI(g);
-diff -ruN orig/src/Lawn/System/Player2Input.cpp PvZ-Portable-main/src/Lawn/System/Player2Input.cpp
---- orig/src/Lawn/System/Player2Input.cpp	1970-01-01 00:00:00.000000000 +0000
-+++ PvZ-Portable-main/src/Lawn/System/Player2Input.cpp	2026-10-28 07:52:36.644450284 +0000
+diff -ruN a/src/Lawn/System/Player2Input.cpp b/src/Lawn/System/Player2Input.cpp
+--- a/src/Lawn/System/Player2Input.cpp	1970-01-01 00:00:00.000000000 +0000
++++ b/src/Lawn/System/Player2Input.cpp	2026-10-28 08:24:10.887246891 +0000
 @@ -0,0 +1,74 @@
 +#include "Player2Input.h"
 +#include "../../GameConstants.h"
@@ -104,9 +104,9 @@ diff -ruN orig/src/Lawn/System/Player2Input.cpp PvZ-Portable-main/src/Lawn/Syste
 +	g->FillRect(x - 12, y - 2, 24, 4);
 +	g->FillRect(x - 2, y - 12, 4, 24);
 +}
-diff -ruN orig/src/Lawn/System/Player2Input.h PvZ-Portable-main/src/Lawn/System/Player2Input.h
---- orig/src/Lawn/System/Player2Input.h	1970-01-01 00:00:00.000000000 +0000
-+++ PvZ-Portable-main/src/Lawn/System/Player2Input.h	2026-10-28 07:52:36.644029361 +0000
+diff -ruN a/src/Lawn/System/Player2Input.h b/src/Lawn/System/Player2Input.h
+--- a/src/Lawn/System/Player2Input.h	1970-01-01 00:00:00.000000000 +0000
++++ b/src/Lawn/System/Player2Input.h	2026-10-28 08:24:10.887233569 +0000
 @@ -0,0 +1,25 @@
 +#ifndef __PLAYER2INPUT_H__
 +#define __PLAYER2INPUT_H__
@@ -133,9 +133,9 @@ diff -ruN orig/src/Lawn/System/Player2Input.h PvZ-Portable-main/src/Lawn/System/
 +};
 +
 +#endif
-diff -ruN orig/src/SexyAppFramework/platform/default/Input.cpp PvZ-Portable-main/src/SexyAppFramework/platform/default/Input.cpp
---- orig/src/SexyAppFramework/platform/default/Input.cpp	2026-10-28 07:52:25.130565090 +0000
-+++ PvZ-Portable-main/src/SexyAppFramework/platform/default/Input.cpp	2026-10-28 07:52:25.258447277 +0000
+diff -ruN a/src/SexyAppFramework/platform/default/Input.cpp b/src/SexyAppFramework/platform/default/Input.cpp
+--- a/src/SexyAppFramework/platform/default/Input.cpp	2026-10-28 07:52:25.130565090 +0000
++++ b/src/SexyAppFramework/platform/default/Input.cpp	2026-10-28 08:24:10.956918624 +0000
 @@ -22,6 +22,7 @@
   * along with PvZ-Portable. If not, see <https://www.gnu.org/licenses/>.
   */
