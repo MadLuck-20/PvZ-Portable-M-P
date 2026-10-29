@@ -4773,8 +4773,23 @@ void Board::P2CollectSuns()
 			continue;
 
 		const unsigned int anId = mCoins.DataArrayGetID(aCoin);
-		if (std::find(mP2PullCoins.begin(), mP2PullCoins.end(), anId) == mP2PullCoins.end())
-			mP2PullCoins.push_back(anId);
+		bool aAlreadyPulled = false;
+		for (const P2PullCoin& aPull : mP2PullCoins)
+		{
+			if (aPull.mId == anId)
+			{
+				aAlreadyPulled = true;
+				break;
+			}
+		}
+		if (aAlreadyPulled)
+			continue;
+
+		// A coin's own update snaps it back up to its "ground" height (mPosY = mGroundY)
+		// every frame, so a sun could never be pulled below where it landed. Lift the
+		// ground out of the way while it flies; it is collected on arrival.
+		mP2PullCoins.push_back({ anId, aCoin->mGroundY, 0 });
+		aCoin->mGroundY = 100000;
 	}
 }
 
@@ -4788,22 +4803,26 @@ void Board::P2UpdatePulledCoins()
 
 	for (size_t i = 0; i < mP2PullCoins.size();)
 	{
-		Coin* aCoin = mCoins.DataArrayTryToGet(mP2PullCoins[i]);
+		P2PullCoin& aPull = mP2PullCoins[i];
+		Coin* aCoin = mCoins.DataArrayTryToGet(aPull.mId);
 		if (aCoin == nullptr || aCoin->mDead || aCoin->mIsBeingCollected)
 		{
 			mP2PullCoins.erase(mP2PullCoins.begin() + i);
 			continue;
 		}
 
+		aPull.mFrames++;
+
 		const float aDX = aTargetX - aCoin->mPosX;
 		const float aDY = aTargetY - aCoin->mPosY;
 		const float aDist = std::sqrt(aDX * aDX + aDY * aDY);
-		const float aSpeed = std::max(10.0f, aDist * 0.18f);
+		const float aSpeed = std::max(6.0f, aDist * 0.10f);
 
 		aCoin->mVelX = 0.0f;
 		aCoin->mVelY = 0.0f;
 
-		if (aDist <= aSpeed)
+		// Arrived (or, as a safety net, it has been flying for far too long).
+		if (aDist <= aSpeed || aPull.mFrames > 300)
 		{
 			aCoin->mPosX = aTargetX;
 			aCoin->mPosY = aTargetY;
@@ -4838,6 +4857,12 @@ void Board::P2Tick()
 {
 	if (!Player2Input::IsConnected())
 	{
+		for (const P2PullCoin& aPull : mP2PullCoins)
+		{
+			Coin* aCoin = mCoins.DataArrayTryToGet(aPull.mId);
+			if (aCoin != nullptr && !aCoin->mIsBeingCollected)
+				aCoin->mGroundY = aPull.mOriginalGroundY;
+		}
 		mP2PullCoins.clear();
 		return;
 	}
@@ -4909,7 +4934,8 @@ void Board::P2DrawSelection(Graphics* g)
 	if (aPacket.mPacketType == SeedType::SEED_NONE)
 		return;
 
-	const int x = aPacket.mX, y = aPacket.mY, w = aPacket.mWidth, h = aPacket.mHeight;
+	// Packets are positioned relative to the seed bank, which has its own origin.
+	const int x = mSeedBank->mX + aPacket.mX, y = mSeedBank->mY + aPacket.mY, w = aPacket.mWidth, h = aPacket.mHeight;
 	g->SetColor(Color(0, 160, 255, 255));
 	for (int t = 0; t < 3; t++)
 		g->DrawRect(x - t, y - t, w + 2 * t, h + 2 * t);
@@ -4939,7 +4965,8 @@ void Board::P2DrawCursor(Graphics* g)
 	}
 	else if (mP2SeedSelection >= 0 && mP2SeedSelection < mSeedBank->mNumPackets)
 	{
-		// Ghost of the selected plant at the cursor. Grey and see-through when it
+		// Ghost of the selected plant on the lawn cell where X would plant it (same
+		// cell computation the planting code uses). Grey and see-through when the seed
 		// can't be used right now (cooldown / not enough sun / requirements).
 		SeedPacket& aPacket = mSeedBank->mSeedPackets[mP2SeedSelection];
 		if (aPacket.mPacketType != SeedType::SEED_NONE)
@@ -4952,28 +4979,20 @@ void Board::P2DrawCursor(Graphics* g)
 			if (aUsable && !HasConveyorBeltSeedBank())
 				aUsable = CanTakeSunMoney(GetCurrentPlantCost(aPacket.mPacketType, aPacket.mImitaterType));
 
-			mCursorObject->mType = aPacket.mPacketType;
-			mCursorObject->mImitaterType = aPacket.mImitaterType;
-			mCursorObject->mCursorType = CursorType::CURSOR_TYPE_PLANT_FROM_BANK;
-			mCursorObject->mX = Player2Input::GetX() - 25;
-			mCursorObject->mY = Player2Input::GetY() - 35;
-			mCursorObject->mVisible = true;
-
-			if (!aUsable)
+			const int aGridX = PlantingPixelToGridX(Player2Input::GetX(), Player2Input::GetY(), aUseType);
+			const int aGridY = PlantingPixelToGridY(Player2Input::GetX(), Player2Input::GetY(), aUseType);
+			if (aGridX >= 0 && aGridX < MAX_GRID_SIZE_X && aGridY >= 0 && aGridY < MAX_GRID_SIZE_Y)
 			{
+				const int aCellX = GridToPixelX(aGridX, aGridY);
+				const int aCellY = GridToPixelY(aGridX, aGridY);
+				g->Translate(aCellX, aCellY);
 				g->SetColorizeImages(true);
-				g->SetColor(Color(110, 110, 110, 150));
+				g->SetColor(aUsable ? Color(255, 255, 255, 200) : Color(110, 110, 110, 110));
+				Plant::DrawSeedType(g, aPacket.mPacketType, aPacket.mImitaterType, DrawVariation::VARIATION_NORMAL,
+					0.0f, PlantDrawHeightOffset(this, nullptr, aUseType, aGridX, aGridY));
+				g->SetColorizeImages(false);
+				g->Translate(-aCellX, -aCellY);
 			}
-			if (mCursorObject->BeginDraw(g))
-			{
-				mCursorObject->Draw(g);
-				mCursorObject->EndDraw(g);
-			}
-			g->SetColorizeImages(false);
-
-			// P2 isn't actually holding anything: clear the preview state again.
-			mCursorObject->mType = SeedType::SEED_NONE;
-			mCursorObject->mCursorType = CursorType::CURSOR_TYPE_NORMAL;
 		}
 	}
 

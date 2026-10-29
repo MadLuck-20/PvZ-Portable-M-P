@@ -138,7 +138,8 @@ public:
 	std::unique_ptr<CursorObject>		mCursorObject;
 	std::unique_ptr<CursorObject>		mCursorObjectP2;		// player 2 (gamepad) held item
 	int									mP2SeedSelection = -1;	// player 2's selected seed packet index
-	std::vector<unsigned int>			mP2PullCoins;			// suns currently flying to player 2's cursor
+	struct P2PullCoin { unsigned int mId; int mOriginalGroundY; int mFrames; };
+	std::vector<P2PullCoin>				mP2PullCoins;			// suns currently flying to player 2's cursor
 	int									mP2SoundCooldown = 0;
 	std::unique_ptr<CursorPreview>		mCursorPreview;
 	std::unique_ptr<MessageWidget>		mAdvice;
