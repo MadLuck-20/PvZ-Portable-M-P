@@ -141,6 +141,8 @@ public:
 	struct P2PullCoin { unsigned int mId; int mOriginalGroundY; int mFrames; };
 	std::vector<P2PullCoin>				mP2PullCoins;			// suns currently flying to player 2's cursor
 	int									mP2SoundCooldown = 0;
+	bool									mP2PreviewHidden = false;	// P2's plant preview is hidden (X shows it again)
+	int									mP2CollectCooldown = 0;
 	std::unique_ptr<CursorPreview>		mCursorPreview;
 	std::unique_ptr<MessageWidget>		mAdvice;
 	std::unique_ptr<SeedBank>			mSeedBank;
@@ -419,6 +421,8 @@ public:
 	void							P2UseShovel();
 	void							P2CancelOrDeselect();
 	void							P2DrawCellFrame(Graphics* g);
+	void							P2TickCoins();
+	void							P2DrawPlantGhost(Graphics* g, SeedType theSeedType, SeedType theImitaterType, bool theUsable);
 	void							P2UpdatePulledCoins();
 	void							P2Confirm();
 	void							P2MoveByCell(int theDX, int theDY);

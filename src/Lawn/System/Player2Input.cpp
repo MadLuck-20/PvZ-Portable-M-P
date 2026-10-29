@@ -19,7 +19,7 @@ static bool					gTriggerPrev[2] = {};
 static bool					gTriggerCurr[2] = {};
 
 static constexpr float		kDeadZone = 0.20f;
-static constexpr float		kSpeedPixelsPerUpdate = 4.0f;
+static constexpr float		kSpeedPixelsPerUpdate = 5.5f;
 
 static float NormalizeAxis(Sint16 theRaw)
 {
