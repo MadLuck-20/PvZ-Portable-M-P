@@ -13,6 +13,8 @@ static float				gCursorY = BOARD_HEIGHT / 2.0f;
 static bool					gButtonPrev[SDL_CONTROLLER_BUTTON_MAX] = {};
 static bool					gButtonCurr[SDL_CONTROLLER_BUTTON_MAX] = {};
 
+static int					gScanCountdown = 0;
+
 static constexpr float		kDeadZone = 0.20f;
 static constexpr float		kSpeedPixelsPerUpdate = 7.0f;
 
@@ -60,7 +62,18 @@ void Player2Input::Update()
 	}
 
 	if (gController == nullptr)
+	{
+		// A pad that was already connected when the app started never produced a
+		// "device added" event we could see, so also look for one every ~0.3 s.
+		if (--gScanCountdown <= 0)
+		{
+			gScanCountdown = 30;
+			const int aNum = SDL_NumJoysticks();
+			for (int i = 0; i < aNum && gController == nullptr; i++)
+				OnDeviceAdded(i);
+		}
 		return;
+	}
 
 	float aDX = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTX));
 	float aDY = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTY));

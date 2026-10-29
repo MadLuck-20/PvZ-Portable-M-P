@@ -27,6 +27,10 @@
 #include <SDL_mixer_ext/SDL_mixer_ext.h>
 
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 
 #include "SexyAppBase.h"
 #include "graphics/GLInterface.h"
@@ -332,12 +336,62 @@ static bool SDLSynthesizeAsciiCharFromKeyDown(const SDL_KeyboardEvent& theEvent,
 	}
 }
 
+#if defined(__IPHONEOS__)
+// Diagnostic log (iOS): appends timing/size info to Documents/pvz-diag.txt so the
+// startup window/orientation sequence can be inspected from the Files app.
+static void DiagLog(const char* theFormat, ...)
+{
+	const char* aHome = getenv("HOME");
+	if (aHome == nullptr)
+		return;
+	std::string aPath = std::string(aHome) + "/Documents/pvz-diag.txt";
+	FILE* aFile = fopen(aPath.c_str(), "a");
+	if (aFile == nullptr)
+		return;
+	fprintf(aFile, "t=%u ", (unsigned)SDL_GetTicks());
+	va_list aArgs;
+	va_start(aArgs, theFormat);
+	vfprintf(aFile, theFormat, aArgs);
+	va_end(aArgs);
+	fputc('\n', aFile);
+	fclose(aFile);
+}
+#endif
+
 #if defined(__IPHONEOS__) || defined(__ANDROID__)
 // Pause/resume all audio as soon as the OS tells us the app goes to the background.
 // An event *watch* is used (instead of the queue) because the app can be suspended
 // right after this notification, before the main loop would ever read it.
 static int SDLCALL BackgroundAudioWatch(void* /*theUserData*/, SDL_Event* theEvent)
 {
+#if defined(__IPHONEOS__)
+	switch (theEvent->type)
+	{
+	case SDL_APP_WILLENTERBACKGROUND:	DiagLog("APP willEnterBackground"); break;
+	case SDL_APP_DIDENTERBACKGROUND:	DiagLog("APP didEnterBackground"); break;
+	case SDL_APP_WILLENTERFOREGROUND:	DiagLog("APP willEnterForeground"); break;
+	case SDL_APP_DIDENTERFOREGROUND:	DiagLog("APP didEnterForeground"); break;
+	case SDL_DISPLAYEVENT:
+		DiagLog("DISPLAY ev=%d orientation=%d", (int)theEvent->display.event, (int)theEvent->display.data1);
+		break;
+	case SDL_WINDOWEVENT:
+	{
+		int aWinW = 0, aWinH = 0, aDrawW = 0, aDrawH = 0;
+		SDL_Window* aWindow = SDL_GetWindowFromID(theEvent->window.windowID);
+		if (aWindow != nullptr)
+		{
+			SDL_GetWindowSize(aWindow, &aWinW, &aWinH);
+			SDL_GL_GetDrawableSize(aWindow, &aDrawW, &aDrawH);
+		}
+		DiagLog("WINDOW ev=%d d1=%d d2=%d win=%dx%d drawable=%dx%d",
+			(int)theEvent->window.event, (int)theEvent->window.data1, (int)theEvent->window.data2,
+			aWinW, aWinH, aDrawW, aDrawH);
+		break;
+	}
+	default:
+		break;
+	}
+#endif
 	if (theEvent->type == SDL_APP_WILLENTERBACKGROUND)
 		Mix_PauseAudio(1);
 	else if (theEvent->type == SDL_APP_DIDENTERFOREGROUND)
@@ -349,9 +403,16 @@ static int SDLCALL BackgroundAudioWatch(void* /*theUserData*/, SDL_Event* theEve
 void SexyAppBase::InitInput()
 {
 	SDL_Init(SDL_INIT_EVENTS);
+#if defined(__IPHONEOS__)
+	// Prefer iOS's native GameController path over SDL's raw HID access for PS4 pads.
+	SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "0");
+#endif
 	SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
 #if defined(__IPHONEOS__) || defined(__ANDROID__)
 	SDL_AddEventWatch(BackgroundAudioWatch, nullptr);
+#endif
+#if defined(__IPHONEOS__)
+	DiagLog("---- InitInput (app start) ----");
 #endif
 }
 
