@@ -4684,6 +4684,8 @@ void Board::P2Click(int theClickCount)
 	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
 		return;
 
+	P2EnsureHammer();
+
 	int aSavedX, aSavedY;
 	P2BeginContext(aSavedX, aSavedY);
 	const bool aSavedIgnoreMouseUp = mIgnoreMouseUp;
@@ -4711,7 +4713,8 @@ void Board::P2Confirm()
 		return;
 
 	const bool aHasSelection = mP2SeedSelection >= 0 && mP2SeedSelection < P2SeedCount();
-	const bool aHandEmpty = mCursorObjectP2->mCursorType == CursorType::CURSOR_TYPE_NORMAL;
+	const bool aHandEmpty = mCursorObjectP2->mCursorType == CursorType::CURSOR_TYPE_NORMAL ||
+		mCursorObjectP2->mCursorType == CursorType::CURSOR_TYPE_HAMMER;
 
 	if (!aHasSelection || !aHandEmpty || P2CoinUnderCursor())
 	{
@@ -4719,10 +4722,14 @@ void Board::P2Confirm()
 		return;
 	}
 
-	// Preview hidden: this press only brings it back; the next one plants.
+	// Preview hidden: this press only brings it back; the next one plants. (In Whack a
+	// Zombie a hidden preview means "use the hammer", so X swings it instead.)
 	if (mP2PreviewHidden)
 	{
-		mP2PreviewHidden = false;
+		if (mApp->IsWhackAZombieLevel())
+			P2Click(1);
+		else
+			mP2PreviewHidden = false;
 		return;
 	}
 
@@ -4742,6 +4749,10 @@ void Board::P2Confirm()
 
 	mIgnoreMouseUp = aSavedIgnoreMouseUp;
 	P2EndContext(aSavedX, aSavedY);
+
+	// After planting in Whack a Zombie the game goes back to the hammer.
+	if (mApp->IsWhackAZombieLevel())
+		mP2PreviewHidden = true;
 }
 
 // L1 / R1: move the selection. It advances over every packet, usable or not.
@@ -4778,6 +4789,9 @@ void Board::P2CycleSeed(int theDirection)
 // has empty slots, which must not be selectable.
 int Board::P2SeedCount()
 {
+	// Whack a Zombie / Scary Potter slide the bank out of view (mY < 0) until it is needed.
+	if (mSeedBank->mY < 0)
+		return 0;
 	return HasConveyorBeltSeedBank() ? mSeedBank->GetNumSeedsOnConveyorBelt() : mSeedBank->mNumPackets;
 }
 
@@ -4877,7 +4891,8 @@ void Board::P2MoveByCell(int theDX, int theDY)
 // Circle (tap): put back whatever is held, otherwise hide the plant preview.
 void Board::P2CancelOrDeselect()
 {
-	if (mCursorObjectP2->mCursorType != CursorType::CURSOR_TYPE_NORMAL)
+	if (mCursorObjectP2->mCursorType != CursorType::CURSOR_TYPE_NORMAL &&
+		mCursorObjectP2->mCursorType != CursorType::CURSOR_TYPE_HAMMER)
 		P2Click(-1);
 	else
 		mP2PreviewHidden = true; // the selection stays; X shows the preview again
@@ -4988,6 +5003,23 @@ void Board::P2TickCoins()
 	}
 }
 
+// Whack a Zombie: every cursor object needs its own hammer animation. The game only
+// creates one for P1's cursor, and drawing or swinging a hammer without it crashes.
+void Board::P2EnsureHammer()
+{
+	if (!mApp->IsWhackAZombieLevel())
+		return;
+	if (mApp->ReanimationTryToGet(mCursorObjectP2->mReanimCursorID) != nullptr)
+		return;
+
+	ReanimatorEnsureDefinitionLoaded(ReanimationType::REANIM_HAMMER, true);
+	Reanimation* aHammerReanim = mApp->AddReanimation(-25.0f, 16.0f, 0, ReanimationType::REANIM_HAMMER);
+	aHammerReanim->mIsAttachment = true;
+	aHammerReanim->PlayReanim("anim_whack_zombie", ReanimLoopType::REANIM_PLAY_ONCE_AND_HOLD, 0, 24.0f);
+	aHammerReanim->mAnimTime = 1.0f;
+	mCursorObjectP2->mReanimCursorID = mApp->ReanimationGetID(aHammerReanim);
+}
+
 void Board::P2Tick()
 {
 	if (!Player2Input::IsConnected())
@@ -5006,6 +5038,13 @@ void Board::P2Tick()
 	{
 		mCursorObjectP2->mVisible = false;
 		return;
+	}
+
+	if (mApp->IsWhackAZombieLevel())
+	{
+		P2EnsureHammer();
+		if (!HasLevelAwardDropped() && mCursorObjectP2->mCursorType == CursorType::CURSOR_TYPE_NORMAL)
+			mCursorObjectP2->mCursorType = CursorType::CURSOR_TYPE_HAMMER;
 	}
 
 	// Keep P2 inside the lawn (the seed bank is reached with L1/R1, not the stick).
@@ -5131,7 +5170,11 @@ void Board::P2DrawCursor(Graphics* g)
 
 	std::swap(mCursorObject, mCursorObjectP2);
 
-	if (mCursorObject->mCursorType != CursorType::CURSOR_TYPE_NORMAL)
+	const CursorType aCursorType = mCursorObject->mCursorType;
+	const bool aHoldingItem = aCursorType != CursorType::CURSOR_TYPE_NORMAL && aCursorType != CursorType::CURSOR_TYPE_HAMMER;
+	const bool aSelectionShown = !mP2PreviewHidden && mP2SeedSelection >= 0 && mP2SeedSelection < P2SeedCount();
+
+	if (aHoldingItem)
 	{
 		if (IsPlantInCursor())
 		{
@@ -5144,7 +5187,7 @@ void Board::P2DrawCursor(Graphics* g)
 			mCursorObject->EndDraw(g);
 		}
 	}
-	else if (!mP2PreviewHidden && mP2SeedSelection >= 0 && mP2SeedSelection < P2SeedCount())
+	else if (aSelectionShown)
 	{
 		SeedPacket& aPacket = mSeedBank->mSeedPackets[mP2SeedSelection];
 		if (aPacket.mPacketType != SeedType::SEED_NONE)
@@ -5158,6 +5201,15 @@ void Board::P2DrawCursor(Graphics* g)
 				aUsable = CanTakeSunMoney(GetCurrentPlantCost(aPacket.mPacketType, aPacket.mImitaterType));
 
 			P2DrawPlantGhost(g, aPacket.mPacketType, aPacket.mImitaterType, aUsable);
+		}
+	}
+	else if (aCursorType == CursorType::CURSOR_TYPE_HAMMER &&
+		mApp->ReanimationTryToGet(mCursorObject->mReanimCursorID) != nullptr)
+	{
+		if (mCursorObject->BeginDraw(g))
+		{
+			mCursorObject->Draw(g);
+			mCursorObject->EndDraw(g);
 		}
 	}
 

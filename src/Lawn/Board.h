@@ -422,6 +422,7 @@ public:
 	void							P2CancelOrDeselect();
 	void							P2DrawCellFrame(Graphics* g);
 	void							P2TickCoins();
+	void							P2EnsureHammer();
 	void							P2DrawPlantGhost(Graphics* g, SeedType theSeedType, SeedType theImitaterType, bool theUsable);
 	void							P2UpdatePulledCoins();
 	void							P2Confirm();
