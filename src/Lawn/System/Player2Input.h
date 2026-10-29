@@ -26,6 +26,12 @@ public:
 
 	// L2 / R2 are analog axes on SDL; true only on the Update() where they pass the threshold.
 	static bool		TriggerJustPressed(bool theLeft);
+
+	static bool		IsDown(SDL_GameControllerButton theButton);
+
+	// Cursor placement / limits (board coordinates).
+	static void		SetPosition(int theX, int theY);
+	static void		SetBounds(int theMinX, int theMinY, int theMaxX, int theMaxY);
 };
 
 #endif

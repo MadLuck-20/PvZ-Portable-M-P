@@ -14,6 +14,7 @@ static bool					gButtonPrev[SDL_CONTROLLER_BUTTON_MAX] = {};
 static bool					gButtonCurr[SDL_CONTROLLER_BUTTON_MAX] = {};
 
 static int					gScanCountdown = 0;
+static float				gMinX = 0.0f, gMinY = 0.0f, gMaxX = (float)BOARD_WIDTH, gMaxY = (float)BOARD_HEIGHT;
 static bool					gTriggerPrev[2] = {};
 static bool					gTriggerCurr[2] = {};
 
@@ -86,8 +87,8 @@ void Player2Input::Update()
 
 	float aDX = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTX));
 	float aDY = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTY));
-	gCursorX = std::clamp(gCursorX + aDX * kSpeedPixelsPerUpdate, 0.0f, (float)BOARD_WIDTH);
-	gCursorY = std::clamp(gCursorY + aDY * kSpeedPixelsPerUpdate, 0.0f, (float)BOARD_HEIGHT);
+	gCursorX = std::clamp(gCursorX + aDX * kSpeedPixelsPerUpdate, gMinX, gMaxX);
+	gCursorY = std::clamp(gCursorY + aDY * kSpeedPixelsPerUpdate, gMinY, gMaxY);
 }
 
 bool Player2Input::JustPressed(SDL_GameControllerButton theButton)
@@ -101,6 +102,27 @@ bool Player2Input::TriggerJustPressed(bool theLeft)
 {
 	const int i = theLeft ? 0 : 1;
 	return gTriggerCurr[i] && !gTriggerPrev[i];
+}
+
+bool Player2Input::IsDown(SDL_GameControllerButton theButton)
+{
+	if (theButton < 0 || theButton >= SDL_CONTROLLER_BUTTON_MAX)
+		return false;
+	return gButtonCurr[theButton];
+}
+
+void Player2Input::SetPosition(int theX, int theY)
+{
+	gCursorX = std::clamp((float)theX, gMinX, gMaxX);
+	gCursorY = std::clamp((float)theY, gMinY, gMaxY);
+}
+
+void Player2Input::SetBounds(int theMinX, int theMinY, int theMaxX, int theMaxY)
+{
+	gMinX = (float)theMinX; gMinY = (float)theMinY;
+	gMaxX = (float)theMaxX; gMaxY = (float)theMaxY;
+	gCursorX = std::clamp(gCursorX, gMinX, gMaxX);
+	gCursorY = std::clamp(gCursorY, gMinY, gMaxY);
 }
 
 int Player2Input::GetX() { return (int)gCursorX; }

@@ -22,6 +22,7 @@
 #ifndef __BOARD_H__
 #define __BOARD_H__
 
+#include <vector>
 #include <cstdint>
 #include <memory>
 
@@ -137,6 +138,8 @@ public:
 	std::unique_ptr<CursorObject>		mCursorObject;
 	std::unique_ptr<CursorObject>		mCursorObjectP2;		// player 2 (gamepad) held item
 	int									mP2SeedSelection = -1;	// player 2's selected seed packet index
+	std::vector<unsigned int>			mP2PullCoins;			// suns currently flying to player 2's cursor
+	int									mP2SoundCooldown = 0;
 	std::unique_ptr<CursorPreview>		mCursorPreview;
 	std::unique_ptr<MessageWidget>		mAdvice;
 	std::unique_ptr<SeedBank>			mSeedBank;
@@ -410,6 +413,11 @@ public:
 	void							P2Click(int theClickCount);
 	void							P2CycleSeed(int theDirection);
 	void							P2CollectSuns();
+	void							P2UpdatePulledCoins();
+	void							P2Confirm();
+	void							P2MoveByCell(int theDX, int theDY);
+	bool							P2CoinUnderCursor();
+	void							P2DrawSelection(Graphics* g);
 	void							P2Tick();
 	void							P2DrawCursor(Graphics* g);
 	Plant*				ToolHitTestHelper(const HitResult* theHitResult);
