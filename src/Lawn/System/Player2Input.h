@@ -20,6 +20,9 @@ public:
 
 	static int		GetX();						// board coordinates
 	static int		GetY();
+
+	// True only on the Update() in which the button went from released to pressed.
+	static bool		JustPressed(SDL_GameControllerButton theButton);
 };
 
 #endif

@@ -10,6 +10,9 @@ static SDL_GameController*	gController = nullptr;
 static float				gCursorX = BOARD_WIDTH / 2.0f;
 static float				gCursorY = BOARD_HEIGHT / 2.0f;
 
+static bool					gButtonPrev[SDL_CONTROLLER_BUTTON_MAX] = {};
+static bool					gButtonCurr[SDL_CONTROLLER_BUTTON_MAX] = {};
+
 static constexpr float		kDeadZone = 0.20f;
 static constexpr float		kSpeedPixelsPerUpdate = 7.0f;
 
@@ -49,6 +52,13 @@ bool Player2Input::IsConnected()
 
 void Player2Input::Update()
 {
+	for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX; i++)
+	{
+		gButtonPrev[i] = gButtonCurr[i];
+		gButtonCurr[i] = (gController != nullptr) &&
+			SDL_GameControllerGetButton(gController, (SDL_GameControllerButton)i) != 0;
+	}
+
 	if (gController == nullptr)
 		return;
 
@@ -56,6 +66,13 @@ void Player2Input::Update()
 	float aDY = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTY));
 	gCursorX = std::clamp(gCursorX + aDX * kSpeedPixelsPerUpdate, 0.0f, (float)BOARD_WIDTH);
 	gCursorY = std::clamp(gCursorY + aDY * kSpeedPixelsPerUpdate, 0.0f, (float)BOARD_HEIGHT);
+}
+
+bool Player2Input::JustPressed(SDL_GameControllerButton theButton)
+{
+	if (theButton < 0 || theButton >= SDL_CONTROLLER_BUTTON_MAX)
+		return false;
+	return gButtonCurr[theButton] && !gButtonPrev[theButton];
 }
 
 int Player2Input::GetX() { return (int)gCursorX; }

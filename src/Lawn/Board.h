@@ -135,6 +135,7 @@ public:
 	DataArray<LawnMower>			mLawnMowers;
 	DataArray<GridItem>				mGridItems;
 	std::unique_ptr<CursorObject>		mCursorObject;
+	std::unique_ptr<CursorObject>		mCursorObjectP2;		// player 2 (gamepad) held item
 	std::unique_ptr<CursorPreview>		mCursorPreview;
 	std::unique_ptr<MessageWidget>		mAdvice;
 	std::unique_ptr<SeedBank>			mSeedBank;
@@ -401,6 +402,14 @@ public:
 	void							UpdateFwoosh();
 	Plant*							SpecialPlantHitTest(int x, int y);
 	void							UpdateMousePosition();
+
+	// ---- Player 2 (gamepad) ----
+	void							P2BeginContext(int& theSavedX, int& theSavedY);
+	void							P2EndContext(int theSavedX, int theSavedY);
+	void							P2Click(int theClickCount);
+	void							P2CycleSeed(int theDirection);
+	void							P2Tick();
+	void							P2DrawCursor(Graphics* g);
 	Plant*				ToolHitTestHelper(const HitResult* theHitResult);
 	Plant*				ToolHitTest(int theX, int theY);
 	bool							CanAddGraveStoneAt(int theGridX, int theGridY);

@@ -91,6 +91,7 @@ Board::Board(LawnApp* theApp)
 	mCoinBankFadeCount = 0;
 	mLevel = 0;
 	mCursorObject = std::make_unique<CursorObject>();
+	mCursorObjectP2 = std::make_unique<CursorObject>();
 	mCursorPreview = std::make_unique<CursorPreview>();
 	mSeedBank = std::make_unique<SeedBank>();
 	mCutScene = std::make_unique<CutScene>();
@@ -4646,6 +4647,109 @@ void Board::ShowCoinBank(int theDuration)
 	mCoinBankFadeCount = theDuration;
 }
 
+// ---------------------------------------------------------------------------
+// Player 2 (gamepad) support
+//
+// The board was written for a single mouse. To let a second player reuse the
+// existing click logic, P2 actions run inside a short "context": P2's cursor
+// object replaces P1's, and the widget manager's last-mouse position is pointed
+// at P2's cursor. Everything is restored afterwards, so P1 (touch/mouse) is
+// unaffected. Sun and seed packets are shared between both players.
+// ---------------------------------------------------------------------------
+
+void Board::P2BeginContext(int& theSavedX, int& theSavedY)
+{
+	theSavedX = mApp->mWidgetManager->mLastMouseX;
+	theSavedY = mApp->mWidgetManager->mLastMouseY;
+	std::swap(mCursorObject, mCursorObjectP2);
+	mApp->mWidgetManager->mLastMouseX = mX + Player2Input::GetX();
+	mApp->mWidgetManager->mLastMouseY = mY + Player2Input::GetY();
+}
+
+void Board::P2EndContext(int theSavedX, int theSavedY)
+{
+	std::swap(mCursorObject, mCursorObjectP2);
+	mApp->mWidgetManager->mLastMouseX = theSavedX;
+	mApp->mWidgetManager->mLastMouseY = theSavedY;
+}
+
+void Board::P2Click(int theClickCount)
+{
+	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
+		return;
+
+	int aSavedX, aSavedY;
+	P2BeginContext(aSavedX, aSavedY);
+	const bool aSavedIgnoreMouseUp = mIgnoreMouseUp;
+	MouseDown(Player2Input::GetX(), Player2Input::GetY(), theClickCount);
+	mIgnoreMouseUp = aSavedIgnoreMouseUp; // P2 never sends a mouse-up; keep P1's flag intact
+	P2EndContext(aSavedX, aSavedY);
+}
+
+void Board::P2CycleSeed(int theDirection)
+{
+	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
+		return;
+
+	const int aNumPackets = mSeedBank->mNumPackets;
+	if (aNumPackets <= 0)
+		return;
+
+	int aIndex = mCursorObjectP2->mSeedBankIndex;
+	if (aIndex < 0 || aIndex >= aNumPackets)
+		aIndex = (theDirection > 0) ? 0 : aNumPackets - 1;
+	else
+		aIndex = (aIndex + theDirection + aNumPackets) % aNumPackets;
+
+	int aSavedX, aSavedY;
+	P2BeginContext(aSavedX, aSavedY);
+	mSeedBank->mSeedPackets[aIndex].MouseDown(0, 0, 1);
+	P2EndContext(aSavedX, aSavedY);
+}
+
+void Board::P2Tick()
+{
+	if (!Player2Input::IsConnected())
+		return;
+
+	if (mApp->mGameScene != GameScenes::SCENE_PLAYING)
+	{
+		mCursorObjectP2->mVisible = false;
+		return;
+	}
+
+	if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_A))
+		P2Click(1);
+	if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_B))
+		P2Click(-1);
+	if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_LEFTSHOULDER))
+		P2CycleSeed(-1);
+	if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER))
+		P2CycleSeed(1);
+
+	int aSavedX, aSavedY;
+	P2BeginContext(aSavedX, aSavedY);
+	mCursorObject->Update();
+	mCursorObject->mVisible = true; // P1's "mouse in" flag doesn't apply to P2
+	mCursorObject->mX = Player2Input::GetX() - 25;
+	mCursorObject->mY = Player2Input::GetY() - 35;
+	P2EndContext(aSavedX, aSavedY);
+}
+
+void Board::P2DrawCursor(Graphics* g)
+{
+	if (!Player2Input::IsConnected() || mTimeStopCounter != 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
+		return;
+
+	std::swap(mCursorObject, mCursorObjectP2);
+	if (mCursorObject->BeginDraw(g))
+	{
+		mCursorObject->Draw(g);
+		mCursorObject->EndDraw(g);
+	}
+	std::swap(mCursorObject, mCursorObjectP2);
+}
+
 void Board::Pause(bool thePause)
 {
 	if (mPaused == thePause)
@@ -4990,6 +5094,7 @@ void Board::UpdateGameObjects()
 
 	mCursorPreview->Update();
 	mCursorObject->Update();
+	P2Tick();
 
 	for (int i = 0; i < mSeedBank->mNumPackets; i++)
 	{
@@ -7433,6 +7538,8 @@ void Board::DrawUITop(Graphics* g)
 		mCursorObject->Draw(g);
 		mCursorObject->EndDraw(g);
 	}
+
+	P2DrawCursor(g);
 
 	mToolTip->Draw(g);
 	DrawDebugText(g);

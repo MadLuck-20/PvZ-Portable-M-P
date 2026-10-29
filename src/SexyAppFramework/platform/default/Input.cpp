@@ -24,6 +24,7 @@
 
 #include "../../../Lawn/System/Player2Input.h"
 #include <SDL.h>
+#include <SDL_mixer_ext/SDL_mixer_ext.h>
 
 #include <algorithm>
 
@@ -331,10 +332,27 @@ static bool SDLSynthesizeAsciiCharFromKeyDown(const SDL_KeyboardEvent& theEvent,
 	}
 }
 
+#if defined(__IPHONEOS__) || defined(__ANDROID__)
+// Pause/resume all audio as soon as the OS tells us the app goes to the background.
+// An event *watch* is used (instead of the queue) because the app can be suspended
+// right after this notification, before the main loop would ever read it.
+static int SDLCALL BackgroundAudioWatch(void* /*theUserData*/, SDL_Event* theEvent)
+{
+	if (theEvent->type == SDL_APP_WILLENTERBACKGROUND)
+		Mix_PauseAudio(1);
+	else if (theEvent->type == SDL_APP_DIDENTERFOREGROUND)
+		Mix_PauseAudio(0);
+	return 1;
+}
+#endif
+
 void SexyAppBase::InitInput()
 {
 	SDL_Init(SDL_INIT_EVENTS);
 	SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
+#if defined(__IPHONEOS__) || defined(__ANDROID__)
+	SDL_AddEventWatch(BackgroundAudioWatch, nullptr);
+#endif
 }
 
 static void RecordDemoMousePosition(SexyAppBase* theApp, int theX, int theY)
