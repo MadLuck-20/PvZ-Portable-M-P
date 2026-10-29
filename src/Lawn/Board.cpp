@@ -4709,7 +4709,7 @@ void Board::P2Confirm()
 	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
 		return;
 
-	const bool aHasSelection = mP2SeedSelection >= 0 && mP2SeedSelection < mSeedBank->mNumPackets;
+	const bool aHasSelection = mP2SeedSelection >= 0 && mP2SeedSelection < P2SeedCount();
 	const bool aHandEmpty = mCursorObjectP2->mCursorType == CursorType::CURSOR_TYPE_NORMAL;
 
 	if (!aHasSelection || !aHandEmpty || P2CoinUnderCursor())
@@ -4742,9 +4742,12 @@ void Board::P2CycleSeed(int theDirection)
 	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
 		return;
 
-	const int aNumPackets = mSeedBank->mNumPackets;
+	const int aNumPackets = P2SeedCount();
 	if (aNumPackets <= 0)
+	{
+		mP2SeedSelection = -1;
 		return;
+	}
 
 	if (mP2SeedSelection < 0 || mP2SeedSelection >= aNumPackets)
 		mP2SeedSelection = (theDirection > 0) ? 0 : aNumPackets - 1;
@@ -4762,6 +4765,33 @@ void Board::P2CycleSeed(int theDirection)
 }
 
 // L2 / R2: every sun on screen flies to P2's cursor and is collected on arrival.
+// Number of seed packets that actually hold a seed. On conveyor-belt levels the bank
+// has empty slots, which must not be selectable.
+int Board::P2SeedCount()
+{
+	return HasConveyorBeltSeedBank() ? mSeedBank->GetNumSeedsOnConveyorBelt() : mSeedBank->mNumPackets;
+}
+
+void Board::P2PullCoinToCursor(Coin* theCoin)
+{
+	if (theCoin->mDead || theCoin->mIsBeingCollected)
+		return;
+
+	const unsigned int anId = mCoins.DataArrayGetID(theCoin);
+	for (const P2PullCoin& aPull : mP2PullCoins)
+	{
+		if (aPull.mId == anId)
+			return;
+	}
+
+	// A coin's own update snaps it back up to its "ground" height (mPosY = mGroundY)
+	// every frame, so a sun could never be pulled below where it landed. Lift the
+	// ground out of the way while it flies; it is collected on arrival.
+	mP2PullCoins.push_back({ anId, theCoin->mGroundY, 0 });
+	theCoin->mGroundY = 100000;
+}
+
+// L2 / R2: every sun on screen flies to P2's cursor and is collected on arrival.
 void Board::P2CollectSuns()
 {
 	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
@@ -4769,27 +4799,8 @@ void Board::P2CollectSuns()
 
 	for (Coin* aCoin : mCoins)
 	{
-		if (aCoin->mDead || aCoin->mIsBeingCollected || !aCoin->IsSun())
-			continue;
-
-		const unsigned int anId = mCoins.DataArrayGetID(aCoin);
-		bool aAlreadyPulled = false;
-		for (const P2PullCoin& aPull : mP2PullCoins)
-		{
-			if (aPull.mId == anId)
-			{
-				aAlreadyPulled = true;
-				break;
-			}
-		}
-		if (aAlreadyPulled)
-			continue;
-
-		// A coin's own update snaps it back up to its "ground" height (mPosY = mGroundY)
-		// every frame, so a sun could never be pulled below where it landed. Lift the
-		// ground out of the way while it flies; it is collected on arrival.
-		mP2PullCoins.push_back({ anId, aCoin->mGroundY, 0 });
-		aCoin->mGroundY = 100000;
+		if (aCoin->IsSun())
+			P2PullCoinToCursor(aCoin);
 	}
 }
 
@@ -4816,7 +4827,7 @@ void Board::P2UpdatePulledCoins()
 		const float aDX = aTargetX - aCoin->mPosX;
 		const float aDY = aTargetY - aCoin->mPosY;
 		const float aDist = std::sqrt(aDX * aDX + aDY * aDY);
-		const float aSpeed = std::max(6.0f, aDist * 0.10f);
+		const float aSpeed = std::clamp(aDist * 0.06f, 5.0f, 12.0f);
 
 		aCoin->mVelX = 0.0f;
 		aCoin->mVelY = 0.0f;
@@ -4853,6 +4864,61 @@ void Board::P2MoveByCell(int theDX, int theDY)
 	Player2Input::SetPosition(GridToPixelX(aGridX, aGridY) + 40, GridToPixelY(aGridX, aGridY) + 40);
 }
 
+// Circle (tap): put back whatever is held, otherwise remove the seed selection.
+void Board::P2CancelOrDeselect()
+{
+	if (mCursorObjectP2->mCursorType != CursorType::CURSOR_TYPE_NORMAL)
+		P2Click(-1);
+	else
+		mP2SeedSelection = -1;
+}
+
+// Circle (hold): dig up the plant under the cursor with the shovel.
+void Board::P2UseShovel()
+{
+	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING || !mShowShovel)
+		return;
+	if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)
+		return;
+
+	int aSavedX, aSavedY;
+	P2BeginContext(aSavedX, aSavedY);
+	if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_BANK)
+		RefreshSeedPacketFromCursor();
+	MouseDownWithTool(Player2Input::GetX(), Player2Input::GetY(), 1, CursorType::CURSOR_TYPE_SHOVEL);
+	P2EndContext(aSavedX, aSavedY);
+}
+
+// Corner-bracket frame on the lawn cell under P2's cursor, with the player's ID above it.
+void Board::P2DrawCellFrame(Graphics* g)
+{
+	SeedType aSeedType = SeedType::SEED_NONE;
+	if (mP2SeedSelection >= 0 && mP2SeedSelection < P2SeedCount())
+	{
+		SeedPacket& aPacket = mSeedBank->mSeedPackets[mP2SeedSelection];
+		aSeedType = (aPacket.mPacketType == SeedType::SEED_IMITATER && aPacket.mImitaterType != SeedType::SEED_NONE)
+			? aPacket.mImitaterType : aPacket.mPacketType;
+	}
+
+	const bool aSix = StageHas6Rows();
+	const int aRows = aSix ? 6 : 5;
+	const int aGridX = std::clamp(PlantingPixelToGridX(Player2Input::GetX(), Player2Input::GetY(), aSeedType), 0, MAX_GRID_SIZE_X - 1);
+	const int aGridY = std::clamp(PlantingPixelToGridY(Player2Input::GetX(), Player2Input::GetY(), aSeedType), 0, aRows - 1);
+	const int x = GridToPixelX(aGridX, aGridY);
+	const int y = GridToPixelY(aGridX, aGridY);
+	const int w = 80, h = aSix ? 85 : 100;
+	const int L = 16, T = 3;
+
+	g->SetColor(Color(0, 160, 255, 255));
+	g->FillRect(x, y, L, T);                 g->FillRect(x, y, T, L);                         // top-left
+	g->FillRect(x + w - L, y, L, T);         g->FillRect(x + w - T, y, T, L);                 // top-right
+	g->FillRect(x, y + h - T, L, T);         g->FillRect(x, y + h - L, T, L);                 // bottom-left
+	g->FillRect(x + w - L, y + h - T, L, T); g->FillRect(x + w - T, y + h - L, T, L);         // bottom-right
+
+	g->SetFont(FONT_PICO129);
+	g->DrawString("P2", x + 4, (y >= 14) ? y - 3 : y + 14);
+}
+
 void Board::P2Tick()
 {
 	if (!Player2Input::IsConnected())
@@ -4883,8 +4949,23 @@ void Board::P2Tick()
 
 	if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_A))
 		P2Confirm();
-	if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_B))
-		P2Click(-1);
+	// Circle: a quick tap drops the held item / clears the selection; holding it uses the shovel.
+	{
+		static int sCircleHold = 0;
+		const int kShovelHoldFrames = 35; // ~0.35 s
+		if (Player2Input::IsDown(SDL_CONTROLLER_BUTTON_B))
+		{
+			sCircleHold++;
+			if (sCircleHold == kShovelHoldFrames)
+				P2UseShovel();
+		}
+		else
+		{
+			if (sCircleHold > 0 && sCircleHold < kShovelHoldFrames)
+				P2CancelOrDeselect();
+			sCircleHold = 0;
+		}
+	}
 	if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_LEFTSHOULDER))
 		P2CycleSeed(-1);
 	if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER))
@@ -4913,6 +4994,17 @@ void Board::P2Tick()
 		}
 	}
 
+	// Suns within one cell of P2 follow P2 and are collected without needing a click.
+	for (Coin* aCoin : mCoins)
+	{
+		if (aCoin->mDead || aCoin->mIsBeingCollected || !aCoin->IsSun())
+			continue;
+		const float aDX = (aCoin->mPosX + aCoin->mWidth / 2) - static_cast<float>(Player2Input::GetX());
+		const float aDY = (aCoin->mPosY + aCoin->mHeight / 2) - static_cast<float>(Player2Input::GetY());
+		if (aDX * aDX + aDY * aDY <= 80.0f * 80.0f)
+			P2PullCoinToCursor(aCoin);
+	}
+
 	P2UpdatePulledCoins();
 
 	int aSavedX, aSavedY;
@@ -4927,15 +5019,16 @@ void Board::P2Tick()
 // Blue frame + "P2" label on the seed packet P2 has selected.
 void Board::P2DrawSelection(Graphics* g)
 {
-	if (mP2SeedSelection < 0 || mP2SeedSelection >= mSeedBank->mNumPackets)
+	if (mP2SeedSelection < 0 || mP2SeedSelection >= P2SeedCount())
 		return;
 
 	SeedPacket& aPacket = mSeedBank->mSeedPackets[mP2SeedSelection];
 	if (aPacket.mPacketType == SeedType::SEED_NONE)
 		return;
 
-	// Packets are positioned relative to the seed bank, which has its own origin.
-	const int x = mSeedBank->mX + aPacket.mX, y = mSeedBank->mY + aPacket.mY, w = aPacket.mWidth, h = aPacket.mHeight;
+	// Packets are positioned relative to the seed bank, which has its own origin, and on
+	// conveyor belts they slide by mOffsetX (the same offset the packet is drawn with).
+	const int x = mSeedBank->mX + aPacket.mX + aPacket.mOffsetX, y = mSeedBank->mY + aPacket.mY, w = aPacket.mWidth, h = aPacket.mHeight;
 	g->SetColor(Color(0, 160, 255, 255));
 	for (int t = 0; t < 3; t++)
 		g->DrawRect(x - t, y - t, w + 2 * t, h + 2 * t);
@@ -4951,6 +5044,7 @@ void Board::P2DrawCursor(Graphics* g)
 		return;
 
 	P2DrawSelection(g);
+	P2DrawCellFrame(g);
 
 	std::swap(mCursorObject, mCursorObjectP2);
 
@@ -4963,7 +5057,7 @@ void Board::P2DrawCursor(Graphics* g)
 			mCursorObject->EndDraw(g);
 		}
 	}
-	else if (mP2SeedSelection >= 0 && mP2SeedSelection < mSeedBank->mNumPackets)
+	else if (mP2SeedSelection >= 0 && mP2SeedSelection < P2SeedCount())
 	{
 		// Ghost of the selected plant on the lawn cell where X would plant it (same
 		// cell computation the planting code uses). Grey and see-through when the seed

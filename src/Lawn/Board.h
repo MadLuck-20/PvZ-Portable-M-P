@@ -414,6 +414,11 @@ public:
 	void							P2Click(int theClickCount);
 	void							P2CycleSeed(int theDirection);
 	void							P2CollectSuns();
+	void							P2PullCoinToCursor(Coin* theCoin);
+	int								P2SeedCount();
+	void							P2UseShovel();
+	void							P2CancelOrDeselect();
+	void							P2DrawCellFrame(Graphics* g);
 	void							P2UpdatePulledCoins();
 	void							P2Confirm();
 	void							P2MoveByCell(int theDX, int theDY);

@@ -133,9 +133,7 @@ void Player2Input::Draw(Sexy::Graphics* g)
 	if (gController == nullptr)
 		return;
 
-	// Simple crosshair so P2 is visually distinct from the touch/mouse cursor.
-	int x = GetX(), y = GetY();
-	g->SetColor(Color(0, 160, 255, 230));
-	g->FillRect(x - 12, y - 2, 24, 4);
-	g->FillRect(x - 2, y - 12, 4, 24);
+	// Exact cursor position (the cell frame itself is drawn by the board).
+	g->SetColor(Color(0, 160, 255, 255));
+	g->FillRect(GetX() - 3, GetY() - 3, 6, 6);
 }

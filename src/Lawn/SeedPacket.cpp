@@ -1077,6 +1077,13 @@ void SeedBank::RemoveSeed(int theIndex)
 		aSeedPacket->mRefreshing = false;
 		aSeedPacket->mActive = true;
 	}
+
+	// The belt shifted left: keep player 2's selection on the same seed.
+	if (mBoard->mP2SeedSelection > theIndex)
+		mBoard->mP2SeedSelection--;
+	const int aRemaining = GetNumSeedsOnConveyorBelt();
+	if (mBoard->mP2SeedSelection >= aRemaining)
+		mBoard->mP2SeedSelection = aRemaining - 1; // -1 when the belt is empty
 }
 
 int SeedBank::GetNumSeedsOnConveyorBelt()
