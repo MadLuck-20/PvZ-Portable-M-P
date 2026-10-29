@@ -14,6 +14,8 @@ static bool					gButtonPrev[SDL_CONTROLLER_BUTTON_MAX] = {};
 static bool					gButtonCurr[SDL_CONTROLLER_BUTTON_MAX] = {};
 
 static int					gScanCountdown = 0;
+static bool					gTriggerPrev[2] = {};
+static bool					gTriggerCurr[2] = {};
 
 static constexpr float		kDeadZone = 0.20f;
 static constexpr float		kSpeedPixelsPerUpdate = 7.0f;
@@ -61,6 +63,13 @@ void Player2Input::Update()
 			SDL_GameControllerGetButton(gController, (SDL_GameControllerButton)i) != 0;
 	}
 
+	gTriggerPrev[0] = gTriggerCurr[0];
+	gTriggerPrev[1] = gTriggerCurr[1];
+	gTriggerCurr[0] = (gController != nullptr) &&
+		SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 16000;
+	gTriggerCurr[1] = (gController != nullptr) &&
+		SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000;
+
 	if (gController == nullptr)
 	{
 		// A pad that was already connected when the app started never produced a
@@ -86,6 +95,12 @@ bool Player2Input::JustPressed(SDL_GameControllerButton theButton)
 	if (theButton < 0 || theButton >= SDL_CONTROLLER_BUTTON_MAX)
 		return false;
 	return gButtonCurr[theButton] && !gButtonPrev[theButton];
+}
+
+bool Player2Input::TriggerJustPressed(bool theLeft)
+{
+	const int i = theLeft ? 0 : 1;
+	return gTriggerCurr[i] && !gTriggerPrev[i];
 }
 
 int Player2Input::GetX() { return (int)gCursorX; }

@@ -23,6 +23,9 @@ public:
 
 	// True only on the Update() in which the button went from released to pressed.
 	static bool		JustPressed(SDL_GameControllerButton theButton);
+
+	// L2 / R2 are analog axes on SDL; true only on the Update() where they pass the threshold.
+	static bool		TriggerJustPressed(bool theLeft);
 };
 
 #endif

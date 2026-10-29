@@ -4695,16 +4695,51 @@ void Board::P2CycleSeed(int theDirection)
 	if (aNumPackets <= 0)
 		return;
 
-	int aIndex = mCursorObjectP2->mSeedBankIndex;
-	if (aIndex < 0 || aIndex >= aNumPackets)
-		aIndex = (theDirection > 0) ? 0 : aNumPackets - 1;
+	// The selection always advances, even over packets that can't be picked up right now
+	// (cooling down, not enough sun), so P2 can keep cycling past them.
+	if (mP2SeedSelection < 0 || mP2SeedSelection >= aNumPackets)
+		mP2SeedSelection = (theDirection > 0) ? 0 : aNumPackets - 1;
 	else
-		aIndex = (aIndex + theDirection + aNumPackets) % aNumPackets;
+		mP2SeedSelection = (mP2SeedSelection + theDirection + aNumPackets) % aNumPackets;
 
 	int aSavedX, aSavedY;
 	P2BeginContext(aSavedX, aSavedY);
-	mSeedBank->mSeedPackets[aIndex].MouseDown(0, 0, 1);
+
+	// Give back whatever P2 is holding first. This re-activates the previously held
+	// packet; without it, every packet P2 passes over would stay stuck as "in use".
+	if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_BANK)
+		RefreshSeedPacketFromCursor();
+	else if (mCursorObject->mCursorType != CursorType::CURSOR_TYPE_NORMAL)
+		ClearCursor();
+
+	mSeedBank->mSeedPackets[mP2SeedSelection].MouseDown(0, 0, 1);
 	P2EndContext(aSavedX, aSavedY);
+}
+
+// L2 / R2: pull every sun on screen to P2's cursor and collect it.
+void Board::P2CollectSuns()
+{
+	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
+		return;
+
+	bool aPlayedSound = false;
+	for (Coin* aCoin : mCoins)
+	{
+		if (aCoin->mDead || aCoin->mIsBeingCollected || !aCoin->IsSun())
+			continue;
+
+		aCoin->mPosX = static_cast<float>(Player2Input::GetX() - 40);
+		aCoin->mPosY = static_cast<float>(Player2Input::GetY() - 40);
+		aCoin->mVelX = 0.0f;
+		aCoin->mVelY = 0.0f;
+
+		if (!aPlayedSound)
+		{
+			aCoin->PlayCollectSound();
+			aPlayedSound = true;
+		}
+		aCoin->Collect();
+	}
 }
 
 void Board::P2Tick()
@@ -4726,6 +4761,8 @@ void Board::P2Tick()
 		P2CycleSeed(-1);
 	if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER))
 		P2CycleSeed(1);
+	if (Player2Input::TriggerJustPressed(true) || Player2Input::TriggerJustPressed(false))
+		P2CollectSuns();
 
 	int aSavedX, aSavedY;
 	P2BeginContext(aSavedX, aSavedY);

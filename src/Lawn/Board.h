@@ -136,6 +136,7 @@ public:
 	DataArray<GridItem>				mGridItems;
 	std::unique_ptr<CursorObject>		mCursorObject;
 	std::unique_ptr<CursorObject>		mCursorObjectP2;		// player 2 (gamepad) held item
+	int									mP2SeedSelection = -1;	// player 2's selected seed packet index
 	std::unique_ptr<CursorPreview>		mCursorPreview;
 	std::unique_ptr<MessageWidget>		mAdvice;
 	std::unique_ptr<SeedBank>			mSeedBank;
@@ -408,6 +409,7 @@ public:
 	void							P2EndContext(int theSavedX, int theSavedY);
 	void							P2Click(int theClickCount);
 	void							P2CycleSeed(int theDirection);
+	void							P2CollectSuns();
 	void							P2Tick();
 	void							P2DrawCursor(Graphics* g);
 	Plant*				ToolHitTestHelper(const HitResult* theHitResult);
