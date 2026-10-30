@@ -210,6 +210,7 @@ public:
 	bool                    mSquished;
 	bool                    mIsAsleep;
 	bool                    mIsOnBoard;
+	bool                    mNoShadow = false; // player 2's preview plant is drawn without a ground shadow
 	bool                    mHighlighted;
 
 public:

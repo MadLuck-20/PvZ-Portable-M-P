@@ -5141,13 +5141,20 @@ void Board::P2DrawSelection(Graphics* g)
 	// Packets are positioned relative to the seed bank, which has its own origin, and on
 	// conveyor belts they slide by mOffsetX (the same offset the packet is drawn with).
 	const int x = mSeedBank->mX + aPacket.mX + aPacket.mOffsetX, y = mSeedBank->mY + aPacket.mY, w = aPacket.mWidth, h = aPacket.mHeight;
-	g->SetColor(Color(0, 160, 255, 255));
-	for (int t = 0; t < 3; t++)
-		g->DrawRect(x - t, y - t, w + 2 * t, h + 2 * t);
 
-	g->SetFont(FONT_PICO129);
+	// A packet still sliding onto the belt is only partly visible: the frame is cut by the
+	// same clip rectangle the bank uses for the belt, so it never sticks out past it.
+	Graphics aFrameG(*g);
+	if (HasConveyorBeltSeedBank())
+		aFrameG.SetClipRect(mSeedBank->mX + 90, mSeedBank->mY, 501, BOARD_HEIGHT);
+
+	aFrameG.SetColor(Color(0, 160, 255, 255));
+	for (int t = 0; t < 3; t++)
+		aFrameG.DrawRect(x - t, y - t, w + 2 * t, h + 2 * t);
+
+	aFrameG.SetFont(FONT_PICO129);
 	const int aLabelY = (y >= 16) ? y - 5 : y + h + 12; // above the card when there is room
-	g->DrawString("P2", x + 4, aLabelY);
+	aFrameG.DrawString("P2", x + 4, aLabelY);
 }
 
 // ---- Player 2 preview ("shadow" of the selected plant on the cell X would plant on) ----
@@ -5209,7 +5216,17 @@ void Board::P2EnsurePreviewPlant(SeedType theSeedType, SeedType theImitaterType)
 	mP2PreviewPlant->mBoard = nullptr;
 	mP2PreviewPlant->mIsOnBoard = false;
 	mP2PreviewPlant->PlantInitialize(0, 0, aUseType, SeedType::SEED_NONE);
+	mP2PreviewPlant->mNoShadow = true;
 	mP2PreviewSeed = aUseType;
+
+	// Off the board the game shows a Sun-shroom fully grown. On the lawn it always starts
+	// small, so the preview must play the small idle.
+	if (aUseType == SeedType::SEED_SUNSHROOM)
+	{
+		Reanimation* aBodyReanim = mApp->ReanimationTryToGet(mP2PreviewPlant->mBodyReanimID);
+		if (aBodyReanim != nullptr)
+			aBodyReanim->SetFramesForLayer("anim_idle");
+	}
 }
 
 void Board::P2DrawPreviewPlant(Graphics* g, int theGridX, int theGridY, bool theUsable)

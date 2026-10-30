@@ -3808,6 +3808,9 @@ Image* Plant::GetImage(SeedType theSeedType)
 
 void Plant::DrawShadow(Sexy::Graphics* g, float theOffsetX, float theOffsetY)
 {
+	if (mNoShadow)
+		return;
+
 	if (mSeedType == SeedType::SEED_LILYPAD || mSeedType == SeedType::SEED_STARFRUIT || mSeedType == SeedType::SEED_TANGLEKELP ||
 		mSeedType == SeedType::SEED_SEASHROOM || mSeedType == SeedType::SEED_COBCANNON || mSeedType == SeedType::SEED_SPIKEWEED ||
 		mSeedType == SeedType::SEED_SPIKEROCK || mSeedType == SeedType::SEED_GRAVEBUSTER || mSeedType == SeedType::SEED_CATTAIL ||
