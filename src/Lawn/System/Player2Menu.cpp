@@ -149,7 +149,7 @@ namespace
 
 	void RunP2(LawnApp* theApp)
 	{
-		WidgetManager* aWM = theApp->mWidgetManager;
+		WidgetManager* aWM = theApp->mWidgetManager.get();
 
 		if (sNeedCenter)
 		{
