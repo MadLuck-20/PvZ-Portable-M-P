@@ -34,6 +34,7 @@
 #include "System/PlayerInfo.h"
 #include "System/PoolEffect.h"
 #include "System/Player2Input.h"
+#include "System/CrashTrace.h"
 #include "System/TypingCheck.h"
 #include "Widget/StoreScreen.h"
 #include "Widget/AwardScreen.h"
@@ -4710,10 +4711,12 @@ bool Board::P2CoinUnderCursor()
 // X button: collect a sun under the cursor, otherwise plant the selected seed.
 void Board::P2Confirm()
 {
+	CrashTrace::Phase aTracePhase("P2Confirm");
 	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
 		return;
 
 	const bool aHasSelection = mP2SeedSelection >= 0 && mP2SeedSelection < P2SeedCount();
+	CrashTrace::Note("confirm sel=%d count=%d held=%d", mP2SeedSelection, P2SeedCount(), static_cast<int>(mCursorObjectP2->mCursorType));
 	const bool aHandEmpty = mCursorObjectP2->mCursorType == CursorType::CURSOR_TYPE_NORMAL ||
 		mCursorObjectP2->mCursorType == CursorType::CURSOR_TYPE_HAMMER;
 
@@ -4759,6 +4762,7 @@ void Board::P2Confirm()
 // L1 / R1: move the selection. It advances over every packet, usable or not.
 void Board::P2CycleSeed(int theDirection)
 {
+	CrashTrace::Phase aTracePhase("P2CycleSeed");
 	if (mPaused || mTimeStopCounter > 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
 		return;
 
@@ -4774,6 +4778,7 @@ void Board::P2CycleSeed(int theDirection)
 	else
 		mP2SeedSelection = (mP2SeedSelection + theDirection + aNumPackets) % aNumPackets;
 	mP2PreviewHidden = false;
+	CrashTrace::Note("cycle sel=%d dir=%d", mP2SeedSelection, theDirection);
 
 	// Make sure P2 isn't left holding a packet (that would keep it deactivated).
 	if (mCursorObjectP2->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_BANK)
@@ -4811,6 +4816,7 @@ void Board::P2PullCoinToCursor(Coin* theCoin)
 	// A coin's own update snaps it back up to its "ground" height (mPosY = mGroundY)
 	// every frame, so a sun could never be pulled below where it landed. Lift the
 	// ground out of the way while it flies; it is collected on arrival.
+	CrashTrace::Note("pull coin id=%u type=%d x=%d y=%d ground=%d", anId, static_cast<int>(theCoin->mType), static_cast<int>(theCoin->mPosX), static_cast<int>(theCoin->mPosY), theCoin->mGroundY);
 	mP2PullCoins.push_back({ anId, theCoin->mGroundY, 0 });
 	theCoin->mGroundY = 100000;
 }
@@ -4830,6 +4836,7 @@ void Board::P2CollectSuns()
 
 void Board::P2UpdatePulledCoins()
 {
+	CrashTrace::Phase aTracePhase("P2UpdatePulledCoins");
 	if (mP2SoundCooldown > 0)
 		mP2SoundCooldown--;
 
@@ -4867,6 +4874,7 @@ void Board::P2UpdatePulledCoins()
 				aCoin->PlayCollectSound();
 				mP2SoundCooldown = 4;
 			}
+			CrashTrace::Note("coin arrived type=%d", static_cast<int>(aCoin->mType));
 			aCoin->Collect();
 			mP2PullCoins.erase(mP2PullCoins.begin() + i);
 			continue;
@@ -4950,6 +4958,7 @@ void Board::P2DrawCellFrame(Graphics* g)
 // everything else is picked up exactly as a click on it would.
 void Board::P2TickCoins()
 {
+	CrashTrace::Phase aTracePhase("P2TickCoins");
 	if (mP2CollectCooldown > 0)
 		mP2CollectCooldown--;
 
@@ -4997,6 +5006,7 @@ void Board::P2TickCoins()
 		{
 			int aSavedX, aSavedY;
 			P2BeginContext(aSavedX, aSavedY);
+			CrashTrace::Note("coin click type=%d", static_cast<int>(aCoin->mType));
 			aCoin->MouseDown(Player2Input::GetX(), Player2Input::GetY(), 1);
 			P2EndContext(aSavedX, aSavedY);
 			mP2CollectCooldown = 30;
@@ -5023,6 +5033,7 @@ void Board::P2EnsureHammer()
 
 void Board::P2Tick()
 {
+	CrashTrace::Phase aTracePhase("P2Tick");
 	if (mApp->GetDialogCount() > 0)
 		return; // a menu is open: the gamepad belongs to the menu
 
@@ -5179,6 +5190,7 @@ void Board::P2DrawSelection(Graphics* g)
 //  * the idle animation only plays while the seed can be used.
 bool Board::P2GetPreviewState(SeedType& theSeed, SeedType& theImitater, bool& theUsable, int& theGridX, int& theGridY)
 {
+	CrashTrace::Phase aTracePhase("P2GetPreviewState");
 	if (mP2PreviewHidden || mP2SeedSelection < 0 || mP2SeedSelection >= P2SeedCount())
 		return false;
 
@@ -5194,6 +5206,19 @@ bool Board::P2GetPreviewState(SeedType& theSeed, SeedType& theImitater, bool& th
 	theGridY = PlantingPixelToGridY(Player2Input::GetX(), Player2Input::GetY(), aUseType);
 	if (theGridX < 0 || theGridX >= MAX_GRID_SIZE_X || theGridY < 0 || theGridY >= MAX_GRID_SIZE_Y)
 		return false;
+
+	{
+		static int sLastNoteCell = -1;
+		static int sLastNoteSeed = -1;
+		const int aCellId = theGridX * 16 + theGridY;
+		if (aCellId != sLastNoteCell || static_cast<int>(aUseType) != sLastNoteSeed)
+		{
+			sLastNoteCell = aCellId;
+			sLastNoteSeed = static_cast<int>(aUseType);
+			CrashTrace::Note("preview cell %d,%d seed=%d reason=%d", theGridX, theGridY, static_cast<int>(aUseType),
+				static_cast<int>(CanPlantAt(theGridX, theGridY, aUseType)));
+		}
+	}
 
 	// Occupied cell: no preview (unless the plant can still be placed there, e.g. an upgrade).
 	if (CanPlantAt(theGridX, theGridY, aUseType) != PlantingReason::PLANTING_OK &&
@@ -5274,11 +5299,13 @@ void Board::P2ApplyPreviewPose(bool theUsable)
 // An off-board plant, created exactly like the Almanac does, so it can play its idle animation.
 void Board::P2EnsurePreviewPlant(SeedType theSeedType, SeedType theImitaterType, bool theUsable)
 {
+	CrashTrace::Phase aTracePhase("P2EnsurePreviewPlant");
 	const SeedType aUseType = (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE) ? theImitaterType : theSeedType;
 	if (!mP2PreviewPlant || mP2PreviewSeed != aUseType)
 	{
 		P2ClearPreviewPlant();
-		mP2PreviewPlant = std::make_unique<Plant>();
+		CrashTrace::Note("preview plant create seed=%d", static_cast<int>(aUseType));
+	mP2PreviewPlant = std::make_unique<Plant>();
 		mP2PreviewPlant->mBoard = nullptr;
 		mP2PreviewPlant->mIsOnBoard = false;
 		mP2PreviewPlant->PlantInitialize(0, 0, aUseType, SeedType::SEED_NONE);
@@ -5297,6 +5324,7 @@ void Board::P2EnsurePreviewPlant(SeedType theSeedType, SeedType theImitaterType,
 
 void Board::P2DrawPreviewPlant(Graphics* g, int theGridX, int theGridY, bool theUsable)
 {
+	CrashTrace::Phase aTracePhase("P2DrawPreviewPlant");
 	if (!mP2PreviewPlant)
 		return;
 
@@ -5354,6 +5382,7 @@ void Board::P2DrawPlantGhost(Graphics* g, SeedType theSeedType, SeedType theImit
 
 void Board::P2DrawCursor(Graphics* g)
 {
+	CrashTrace::Phase aTracePhase("P2DrawCursor");
 	if (!Player2Input::IsConnected() || mTimeStopCounter != 0 || mApp->mGameScene != GameScenes::SCENE_PLAYING)
 		return;
 

@@ -26,6 +26,7 @@
 #include "SeedPacket.h"
 #include "../LawnApp.h"
 #include "CursorObject.h"
+#include "System/CrashTrace.h"
 #include "../Resources.h"
 #include "MessageWidget.h"
 #include "graphics/Font.h"
@@ -725,6 +726,7 @@ bool SeedPacket::CanPickUp()
 
 void SeedPacket::MouseDown([[maybe_unused]] int x, [[maybe_unused]] int y, [[maybe_unused]] int theClickCount)
 {
+	CrashTrace::Note("seed packet mousedown type=%d index=%d", static_cast<int>(mPacketType), mIndex);
 	if (mBoard->mPaused || mApp->mGameScene != GameScenes::SCENE_PLAYING || mPacketType == SeedType::SEED_NONE)
 	{
 		return;

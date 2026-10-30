@@ -24,6 +24,7 @@
 
 #include "../../../Lawn/System/Player2Input.h"
 #include "../../../Lawn/System/Player2Menu.h"
+#include "../../../Lawn/System/CrashTrace.h"
 #include <SDL.h>
 #include <SDL_mixer_ext/SDL_mixer_ext.h>
 
@@ -403,6 +404,7 @@ static int SDLCALL BackgroundAudioWatch(void* /*theUserData*/, SDL_Event* theEve
 
 void SexyAppBase::InitInput()
 {
+	CrashTrace::Install();
 	SDL_Init(SDL_INIT_EVENTS);
 #if defined(__IPHONEOS__)
 	// Prefer iOS's native GameController path over SDL's raw HID access for PS4 pads.

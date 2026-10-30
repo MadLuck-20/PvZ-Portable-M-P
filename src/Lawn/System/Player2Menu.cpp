@@ -458,19 +458,13 @@ void Player2Menu::Update(LawnApp* theApp)
 
 void Player2Menu::Draw(Sexy::Graphics* g)
 {
-	if (!IsActive() || !sFocusDrawable || sFocus == nullptr)
+	// The game's own button highlight already shows the selected option, so only the
+	// hint for an adjusting slider is drawn.
+	if (!IsActive() || !sFocusDrawable || sFocus == nullptr || sSlider == nullptr)
 		return;
 
-	// Blue frame around the selected option.
 	const Point aPos = sFocus->GetAbsPos();
 	g->SetColor(Color(0, 160, 255, 255));
-	for (int t = 0; t < 3; t++)
-		g->DrawRect(aPos.mX - 3 - t, aPos.mY - 3 - t, sFocus->mWidth + 6 + 2 * t, sFocus->mHeight + 6 + 2 * t);
-
-	// While a slider is being adjusted, a short hint above it.
-	if (sSlider != nullptr)
-	{
-		g->SetFont(FONT_PICO129);
-		g->DrawString("< >   X: OK   O: CANCEL", aPos.mX, aPos.mY - 12);
-	}
+	g->SetFont(FONT_PICO129);
+	g->DrawString("< >   X: OK   O: CANCEL", aPos.mX, aPos.mY - 12);
 }
