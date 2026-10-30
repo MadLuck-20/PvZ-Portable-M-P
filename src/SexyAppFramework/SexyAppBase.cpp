@@ -26,6 +26,7 @@
 //#define SEXY_PERF_ENABLED
 //#define SEXY_MEMTRACE
 
+#include "../Lawn/System/Player2Menu.h"
 #include <string>
 #include <string_view>
 #include <fstream>
@@ -1831,6 +1832,13 @@ bool SexyAppBase::DrawDirtyStuff()
 		uint32_t aMidTime = SDL_GetTicks();
 
 		mDrawTime += aMidTime - aStartTime;
+
+		if (Player2Menu::IsActive())
+		{
+			// Gamepad cursor of player 2 while it controls a menu, drawn over everything.
+			Graphics aMenuG(mGLInterface->GetScreenImage());
+			Player2Menu::Draw(&aMenuG);
+		}
 
 		if (mShowFPS)
 		{

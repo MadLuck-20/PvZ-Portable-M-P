@@ -24,6 +24,8 @@
 #include <cstdio>
 #include <format>
 #include "LawnApp.h"
+#include "Lawn/System/Player2Input.h"
+#include "Lawn/System/Player2Menu.h"
 #include "Resources.h"
 #include "Lawn/LawnCommon.h"
 #include "Lawn/Board.h"
@@ -609,6 +611,8 @@ void LawnApp::DoConfirmBackToMain()
 
 void LawnApp::DoNewOptions(bool theFromGameSelector)
 {
+	Player2Menu::OnOptionsOpened(); // whoever opens the pause menu owns it
+
 	//FinishModelessDialogs();
 
 	NewOptionsDialog* aDialog = new NewOptionsDialog(this, theFromGameSelector);
@@ -1589,6 +1593,11 @@ void LawnApp::UpdateFrames()
 		{
 			mEffectSystem->ProcessDeleteQueue();
 		}
+
+		// Gamepad state is sampled exactly once per update tick, here, so that both the
+		// board and the menus see the same button edges.
+		Player2Input::Update();
+		Player2Menu::Update(this);
 
 		SexyApp::UpdateFrames();
 

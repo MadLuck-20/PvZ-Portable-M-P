@@ -104,6 +104,16 @@ bool Player2Input::TriggerJustPressed(bool theLeft)
 	return gTriggerCurr[i] && !gTriggerPrev[i];
 }
 
+void Player2Input::GetLeftStick(float& theX, float& theY)
+{
+	theX = 0.0f;
+	theY = 0.0f;
+	if (gController == nullptr)
+		return;
+	theX = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTX));
+	theY = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTY));
+}
+
 bool Player2Input::IsDown(SDL_GameControllerButton theButton)
 {
 	if (theButton < 0 || theButton >= SDL_CONTROLLER_BUTTON_MAX)

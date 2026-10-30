@@ -5023,6 +5023,9 @@ void Board::P2EnsureHammer()
 
 void Board::P2Tick()
 {
+	if (mApp->GetDialogCount() > 0)
+		return; // a menu is open: the gamepad belongs to the menu
+
 	if (!Player2Input::IsConnected())
 	{
 		for (const P2PullCoin& aPull : mP2PullCoins)
@@ -5039,6 +5042,15 @@ void Board::P2Tick()
 	{
 		mCursorObjectP2->mVisible = false;
 		return;
+	}
+
+	// Like the console versions: the first seed in the list starts out selected.
+	if (!mP2SelectionInitialized && P2SeedCount() > 0)
+	{
+		mP2SeedSelection = 0;
+		mP2SelectionInitialized = true;
+		if (mApp->IsWhackAZombieLevel())
+			mP2PreviewHidden = true; // there the hammer is the default
 	}
 
 	if (mApp->IsWhackAZombieLevel())
@@ -5374,8 +5386,11 @@ void Board::P2DrawCursor(Graphics* g)
 		int aGridX, aGridY;
 		if (P2GetPreviewState(aSeed, aImitater, aUsable, aGridX, aGridY))
 		{
-			P2EnsurePreviewPlant(aSeed, aImitater, aUsable);
-			P2DrawPreviewPlant(g, aGridX, aGridY, aUsable);
+			// Never create the plant while drawing (creating one uses the game's random
+			// numbers, which drawing must not touch): the update tick creates it.
+			const SeedType aUseType = (aSeed == SeedType::SEED_IMITATER && aImitater != SeedType::SEED_NONE) ? aImitater : aSeed;
+			if (mP2PreviewPlant && mP2PreviewSeed == aUseType)
+				P2DrawPreviewPlant(g, aGridX, aGridY, aUsable);
 		}
 	}
 	else if (aCursorType == CursorType::CURSOR_TYPE_HAMMER &&
@@ -6443,7 +6458,6 @@ void Board::Update()
 
 	Widget::Update();
 	MarkDirty();
-	Player2Input::Update();
 
 	mBoardUpdateCounter++;
 	mCutScene->Update();

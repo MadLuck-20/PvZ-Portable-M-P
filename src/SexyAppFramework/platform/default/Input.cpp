@@ -23,6 +23,7 @@
  */
 
 #include "../../../Lawn/System/Player2Input.h"
+#include "../../../Lawn/System/Player2Menu.h"
 #include <SDL.h>
 #include <SDL_mixer_ext/SDL_mixer_ext.h>
 
@@ -785,6 +786,9 @@ bool SexyAppBase::ProcessDeferredMessages(bool singleMessage)
 
 			case SDL_MOUSEMOTION:
 			{
+				if (Player2Menu::BlocksPointerInput())
+					break; // player 2 owns the open menu
+
 				if (!mMouseIn)
 					mMouseIn = true;
 
@@ -800,6 +804,10 @@ bool SexyAppBase::ProcessDeferredMessages(bool singleMessage)
 
 			case SDL_MOUSEBUTTONDOWN:
 			{
+				if (Player2Menu::BlocksPointerInput())
+					break; // player 2 owns the open menu
+				Player2Menu::NotifyPointerDown();
+
 				if (!mMouseIn)
 					mMouseIn = true;
 
@@ -823,6 +831,9 @@ bool SexyAppBase::ProcessDeferredMessages(bool singleMessage)
 
 			case SDL_MOUSEBUTTONUP:
 			{
+				if (Player2Menu::BlocksPointerInput())
+					break; // player 2 owns the open menu
+
 				if (!mMouseIn)
 					mMouseIn = true;
 

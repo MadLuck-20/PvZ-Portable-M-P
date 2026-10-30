@@ -29,6 +29,9 @@ public:
 
 	static bool		IsDown(SDL_GameControllerButton theButton);
 
+	// Left stick with the dead zone applied, each axis in -1..1.
+	static void		GetLeftStick(float& theX, float& theY);
+
 	// Cursor placement / limits (board coordinates).
 	static void		SetPosition(int theX, int theY);
 	static void		SetBounds(int theMinX, int theMinY, int theMaxX, int theMaxY);

@@ -142,6 +142,7 @@ public:
 	std::vector<P2PullCoin>				mP2PullCoins;			// suns currently flying to player 2's cursor
 	int									mP2SoundCooldown = 0;
 	bool									mP2PreviewHidden = false;	// P2's plant preview is hidden (X shows it again)
+	bool									mP2SelectionInitialized = false;
 	std::unique_ptr<Plant>				mP2PreviewPlant;		// off-board plant used for P2's animated preview
 	SeedType							mP2PreviewSeed = SeedType::SEED_NONE;
 	int									mP2PreviewPose = -1;		// -1 unknown, 0 not usable (frozen), 1 usable (animated)
