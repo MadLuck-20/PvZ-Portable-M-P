@@ -29,6 +29,9 @@ public:
 
 	static bool		IsDown(SDL_GameControllerButton theButton);
 
+	// While frozen (a menu is open) the stick no longer moves the garden cursor.
+	static void		SetCursorFrozen(bool theFrozen);
+
 	// Left stick with the dead zone applied, each axis in -1..1.
 	static void		GetLeftStick(float& theX, float& theY);
 

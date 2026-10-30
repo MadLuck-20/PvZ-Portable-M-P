@@ -14,6 +14,7 @@ static bool					gButtonPrev[SDL_CONTROLLER_BUTTON_MAX] = {};
 static bool					gButtonCurr[SDL_CONTROLLER_BUTTON_MAX] = {};
 
 static int					gScanCountdown = 0;
+static bool					gCursorFrozen = false;
 static float				gMinX = 0.0f, gMinY = 0.0f, gMaxX = (float)BOARD_WIDTH, gMaxY = (float)BOARD_HEIGHT;
 static bool					gTriggerPrev[2] = {};
 static bool					gTriggerCurr[2] = {};
@@ -87,6 +88,9 @@ void Player2Input::Update()
 
 	float aDX = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTX));
 	float aDY = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTY));
+	if (gCursorFrozen)
+		return;
+
 	gCursorX = std::clamp(gCursorX + aDX * kSpeedPixelsPerUpdate, gMinX, gMaxX);
 	gCursorY = std::clamp(gCursorY + aDY * kSpeedPixelsPerUpdate, gMinY, gMaxY);
 }
@@ -112,6 +116,11 @@ void Player2Input::GetLeftStick(float& theX, float& theY)
 		return;
 	theX = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTX));
 	theY = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTY));
+}
+
+void Player2Input::SetCursorFrozen(bool theFrozen)
+{
+	gCursorFrozen = theFrozen;
 }
 
 bool Player2Input::IsDown(SDL_GameControllerButton theButton)

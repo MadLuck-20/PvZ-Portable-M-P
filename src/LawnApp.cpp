@@ -1596,6 +1596,7 @@ void LawnApp::UpdateFrames()
 
 		// Gamepad state is sampled exactly once per update tick, here, so that both the
 		// board and the menus see the same button edges.
+		Player2Input::SetCursorFrozen(GetDialogCount() > 0); // menus use the stick for navigation
 		Player2Input::Update();
 		Player2Menu::Update(this);
 
