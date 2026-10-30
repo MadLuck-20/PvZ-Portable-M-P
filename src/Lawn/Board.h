@@ -142,6 +142,8 @@ public:
 	std::vector<P2PullCoin>				mP2PullCoins;			// suns currently flying to player 2's cursor
 	int									mP2SoundCooldown = 0;
 	bool									mP2PreviewHidden = false;	// P2's plant preview is hidden (X shows it again)
+	std::unique_ptr<Plant>				mP2PreviewPlant;		// off-board plant used for P2's animated preview
+	SeedType							mP2PreviewSeed = SeedType::SEED_NONE;
 	int									mP2CollectCooldown = 0;
 	std::unique_ptr<CursorPreview>		mCursorPreview;
 	std::unique_ptr<MessageWidget>		mAdvice;
@@ -423,6 +425,10 @@ public:
 	void							P2DrawCellFrame(Graphics* g);
 	void							P2TickCoins();
 	void							P2EnsureHammer();
+	bool							P2GetPreviewState(SeedType& theSeed, SeedType& theImitater, bool& theUsable, int& theGridX, int& theGridY);
+	void							P2EnsurePreviewPlant(SeedType theSeedType, SeedType theImitaterType);
+	void							P2ClearPreviewPlant();
+	void							P2DrawPreviewPlant(Graphics* g, int theGridX, int theGridY, bool theUsable);
 	void							P2DrawPlantGhost(Graphics* g, SeedType theSeedType, SeedType theImitaterType, bool theUsable);
 	void							P2UpdatePulledCoins();
 	void							P2Confirm();

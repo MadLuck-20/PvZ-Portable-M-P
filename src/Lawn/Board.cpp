@@ -248,6 +248,7 @@ void BoardInitForPlayer()
 
 void Board::DisposeBoard()
 {
+	P2ClearPreviewPlant();
 	if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN)
 		mApp->mZenGarden->LeaveGarden();
 	if (mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)
@@ -5103,6 +5104,19 @@ void Board::P2Tick()
 	}
 
 	P2TickCoins();
+
+	// Idle animation of the preview plays only while the seed can be used.
+	{
+		SeedType aSeed, aImitater;
+		bool aUsable;
+		int aGridX, aGridY;
+		if (P2GetPreviewState(aSeed, aImitater, aUsable, aGridX, aGridY))
+		{
+			P2EnsurePreviewPlant(aSeed, aImitater);
+			if (aUsable && mP2PreviewPlant)
+				mP2PreviewPlant->Update();
+		}
+	}
 	P2UpdatePulledCoins();
 
 	int aSavedX, aSavedY;
@@ -5136,8 +5150,103 @@ void Board::P2DrawSelection(Graphics* g)
 	g->DrawString("P2", x + 4, aLabelY);
 }
 
+// ---- Player 2 preview ("shadow" of the selected plant on the cell X would plant on) ----
+//
+// Rules (mirroring the console versions):
+//  * always semi-transparent;
+//  * in colour only when the seed can be used right now (enough sun, not recharging,
+//    planting requirements met); otherwise it is a black, shadow-like silhouette;
+//  * gone while a plant occupies the cell;
+//  * the idle animation only plays while the seed can be used.
+bool Board::P2GetPreviewState(SeedType& theSeed, SeedType& theImitater, bool& theUsable, int& theGridX, int& theGridY)
+{
+	if (mP2PreviewHidden || mP2SeedSelection < 0 || mP2SeedSelection >= P2SeedCount())
+		return false;
+
+	SeedPacket& aPacket = mSeedBank->mSeedPackets[mP2SeedSelection];
+	if (aPacket.mPacketType == SeedType::SEED_NONE)
+		return false;
+
+	theSeed = aPacket.mPacketType;
+	theImitater = aPacket.mImitaterType;
+	const SeedType aUseType = (theSeed == SeedType::SEED_IMITATER && theImitater != SeedType::SEED_NONE) ? theImitater : theSeed;
+
+	theGridX = PlantingPixelToGridX(Player2Input::GetX(), Player2Input::GetY(), aUseType);
+	theGridY = PlantingPixelToGridY(Player2Input::GetX(), Player2Input::GetY(), aUseType);
+	if (theGridX < 0 || theGridX >= MAX_GRID_SIZE_X || theGridY < 0 || theGridY >= MAX_GRID_SIZE_Y)
+		return false;
+
+	// Occupied cell: no preview (unless the plant can still be placed there, e.g. an upgrade).
+	if (CanPlantAt(theGridX, theGridY, aUseType) != PlantingReason::PLANTING_OK &&
+		GetTopPlantAt(theGridX, theGridY, PlantPriority::TOPPLANT_ANY) != nullptr)
+		return false;
+
+	theUsable = aPacket.mActive && PlantingRequirementsMet(aUseType);
+	if (theUsable && !HasConveyorBeltSeedBank())
+		theUsable = CanTakeSunMoney(GetCurrentPlantCost(theSeed, theImitater));
+	return true;
+}
+
+void Board::P2ClearPreviewPlant()
+{
+	if (mP2PreviewPlant)
+	{
+		mP2PreviewPlant->Die();
+		mP2PreviewPlant.reset();
+	}
+	mP2PreviewSeed = SeedType::SEED_NONE;
+}
+
+// An off-board plant, created exactly like the Almanac does, so it can play its idle animation.
+void Board::P2EnsurePreviewPlant(SeedType theSeedType, SeedType theImitaterType)
+{
+	const SeedType aUseType = (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE) ? theImitaterType : theSeedType;
+	if (mP2PreviewPlant && mP2PreviewSeed == aUseType)
+		return;
+
+	P2ClearPreviewPlant();
+	mP2PreviewPlant = std::make_unique<Plant>();
+	mP2PreviewPlant->mBoard = nullptr;
+	mP2PreviewPlant->mIsOnBoard = false;
+	mP2PreviewPlant->PlantInitialize(0, 0, aUseType, SeedType::SEED_NONE);
+	mP2PreviewSeed = aUseType;
+}
+
+void Board::P2DrawPreviewPlant(Graphics* g, int theGridX, int theGridY, bool theUsable)
+{
+	if (!mP2PreviewPlant)
+		return;
+
+	Plant* aPlant = mP2PreviewPlant.get();
+	aPlant->mX = GridToPixelX(theGridX, theGridY);
+	aPlant->mY = GridToPixelY(theGridX, theGridY);
+	aPlant->mPlantCol = theGridX;
+	aPlant->mRow = theGridY;
+
+	// The plant resets its own colours every update, so tint right before drawing:
+	// semi-transparent, in colour if usable, black silhouette if not.
+	const Color aTint = theUsable ? Color(255, 255, 255, 150) : Color(0, 0, 0, 150);
+	const ReanimationID aReanimIDs[] = {
+		aPlant->mBodyReanimID, aPlant->mHeadReanimID, aPlant->mHeadReanimID2, aPlant->mHeadReanimID3,
+		aPlant->mBlinkReanimID, aPlant->mLightReanimID, aPlant->mSleepingReanimID };
+	for (const ReanimationID aID : aReanimIDs)
+	{
+		Reanimation* aReanim = mApp->ReanimationTryToGet(aID);
+		if (aReanim != nullptr)
+		{
+			aReanim->mColorOverride = aTint;
+			aReanim->mEnableExtraAdditiveDraw = false;
+			aReanim->mEnableExtraOverlayDraw = false;
+		}
+	}
+
+	Graphics aPlantGraphics(*g);
+	aPlant->BeginDraw(&aPlantGraphics);
+	aPlant->Draw(&aPlantGraphics);
+}
+
 // Translucent plant on the lawn cell where X would plant it (the same cell computation
-// the planting code uses). Grey and see-through when it can't be used right now.
+// the planting code uses), for a plant P2 is actually holding. Always see-through.
 void Board::P2DrawPlantGhost(Graphics* g, SeedType theSeedType, SeedType theImitaterType, bool theUsable)
 {
 	SeedType aUseType = theSeedType;
@@ -5153,7 +5262,7 @@ void Board::P2DrawPlantGhost(Graphics* g, SeedType theSeedType, SeedType theImit
 	const int aCellY = GridToPixelY(aGridX, aGridY);
 	g->Translate(aCellX, aCellY);
 	g->SetColorizeImages(true);
-	g->SetColor(theUsable ? Color(255, 255, 255, 200) : Color(110, 110, 110, 110));
+	g->SetColor(theUsable ? Color(255, 255, 255, 150) : Color(0, 0, 0, 150));
 	Plant::DrawSeedType(g, theSeedType, theImitaterType, DrawVariation::VARIATION_NORMAL,
 		0.0f, PlantDrawHeightOffset(this, nullptr, aUseType, aGridX, aGridY));
 	g->SetColorizeImages(false);
@@ -5189,18 +5298,13 @@ void Board::P2DrawCursor(Graphics* g)
 	}
 	else if (aSelectionShown)
 	{
-		SeedPacket& aPacket = mSeedBank->mSeedPackets[mP2SeedSelection];
-		if (aPacket.mPacketType != SeedType::SEED_NONE)
+		SeedType aSeed, aImitater;
+		bool aUsable;
+		int aGridX, aGridY;
+		if (P2GetPreviewState(aSeed, aImitater, aUsable, aGridX, aGridY))
 		{
-			SeedType aUseType = aPacket.mPacketType;
-			if (aPacket.mPacketType == SeedType::SEED_IMITATER && aPacket.mImitaterType != SeedType::SEED_NONE)
-				aUseType = aPacket.mImitaterType;
-
-			bool aUsable = aPacket.mActive && PlantingRequirementsMet(aUseType);
-			if (aUsable && !HasConveyorBeltSeedBank())
-				aUsable = CanTakeSunMoney(GetCurrentPlantCost(aPacket.mPacketType, aPacket.mImitaterType));
-
-			P2DrawPlantGhost(g, aPacket.mPacketType, aPacket.mImitaterType, aUsable);
+			P2EnsurePreviewPlant(aSeed, aImitater);
+			P2DrawPreviewPlant(g, aGridX, aGridY, aUsable);
 		}
 	}
 	else if (aCursorType == CursorType::CURSOR_TYPE_HAMMER &&
