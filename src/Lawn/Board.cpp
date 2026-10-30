@@ -5112,7 +5112,7 @@ void Board::P2Tick()
 		int aGridX, aGridY;
 		if (P2GetPreviewState(aSeed, aImitater, aUsable, aGridX, aGridY))
 		{
-			P2EnsurePreviewPlant(aSeed, aImitater);
+			P2EnsurePreviewPlant(aSeed, aImitater, aUsable);
 			if (aUsable && mP2PreviewPlant)
 				mP2PreviewPlant->Update();
 		}
@@ -5202,30 +5202,84 @@ void Board::P2ClearPreviewPlant()
 		mP2PreviewPlant.reset();
 	}
 	mP2PreviewSeed = SeedType::SEED_NONE;
+	mP2PreviewPose = -1;
+}
+
+// Plants with two idle looks (Potato Mine, Sun-shroom, Cob Cannon) are shown like the
+// console versions do: while the seed can be used, the look the plant has right after
+// being planted, animated; while it can't, its final look, frozen.
+void Board::P2ApplyPreviewPose(bool theUsable)
+{
+	Plant* aPlant = mP2PreviewPlant.get();
+	if (aPlant == nullptr)
+		return;
+	Reanimation* aBodyReanim = mApp->ReanimationTryToGet(aPlant->mBodyReanimID);
+	if (aBodyReanim == nullptr)
+		return;
+
+	switch (mP2PreviewSeed)
+	{
+	case SeedType::SEED_POTATOMINE:
+		aBodyReanim->AssignRenderGroupToTrack("anim_glow", RENDER_GROUP_HIDDEN);
+		if (theUsable)
+		{
+			aBodyReanim->SetFramesForLayer("anim_idle"); // buried, as when planted
+			aPlant->mState = PlantState::STATE_NOTREADY;
+		}
+		else
+		{
+			aBodyReanim->SetFramesForLayer("anim_armed"); // ready to explode
+			aPlant->mState = PlantState::STATE_POTATO_ARMED;
+		}
+		break;
+
+	case SeedType::SEED_SUNSHROOM:
+		if (theUsable)
+		{
+			aBodyReanim->SetFramesForLayer("anim_idle"); // small, as when planted
+			aPlant->mState = PlantState::STATE_SUNSHROOM_SMALL;
+		}
+		else
+		{
+			aBodyReanim->SetFramesForLayer("anim_bigidle"); // fully grown
+			aPlant->mState = PlantState::STATE_SUNSHROOM_BIG;
+		}
+		break;
+
+	case SeedType::SEED_COBCANNON:
+		aBodyReanim->SetFramesForLayer(theUsable ? "anim_unarmed_idle" : "anim_idle");
+		break;
+
+	default:
+		break;
+	}
+
+	// Applies the plant's own size/position adjustments (the Potato Mine, for one, is drawn
+	// at 80%) even while the animation is frozen and Update() isn't running.
+	aPlant->UpdateReanim();
 }
 
 // An off-board plant, created exactly like the Almanac does, so it can play its idle animation.
-void Board::P2EnsurePreviewPlant(SeedType theSeedType, SeedType theImitaterType)
+void Board::P2EnsurePreviewPlant(SeedType theSeedType, SeedType theImitaterType, bool theUsable)
 {
 	const SeedType aUseType = (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE) ? theImitaterType : theSeedType;
-	if (mP2PreviewPlant && mP2PreviewSeed == aUseType)
-		return;
-
-	P2ClearPreviewPlant();
-	mP2PreviewPlant = std::make_unique<Plant>();
-	mP2PreviewPlant->mBoard = nullptr;
-	mP2PreviewPlant->mIsOnBoard = false;
-	mP2PreviewPlant->PlantInitialize(0, 0, aUseType, SeedType::SEED_NONE);
-	mP2PreviewPlant->mNoShadow = true;
-	mP2PreviewSeed = aUseType;
-
-	// Off the board the game shows a Sun-shroom fully grown. On the lawn it always starts
-	// small, so the preview must play the small idle.
-	if (aUseType == SeedType::SEED_SUNSHROOM)
+	if (!mP2PreviewPlant || mP2PreviewSeed != aUseType)
 	{
-		Reanimation* aBodyReanim = mApp->ReanimationTryToGet(mP2PreviewPlant->mBodyReanimID);
-		if (aBodyReanim != nullptr)
-			aBodyReanim->SetFramesForLayer("anim_idle");
+		P2ClearPreviewPlant();
+		mP2PreviewPlant = std::make_unique<Plant>();
+		mP2PreviewPlant->mBoard = nullptr;
+		mP2PreviewPlant->mIsOnBoard = false;
+		mP2PreviewPlant->PlantInitialize(0, 0, aUseType, SeedType::SEED_NONE);
+		mP2PreviewPlant->mNoShadow = true;
+		mP2PreviewSeed = aUseType;
+		mP2PreviewPose = -1;
+	}
+
+	const int aPose = theUsable ? 1 : 0;
+	if (mP2PreviewPose != aPose)
+	{
+		P2ApplyPreviewPose(theUsable);
+		mP2PreviewPose = aPose;
 	}
 }
 
@@ -5320,7 +5374,7 @@ void Board::P2DrawCursor(Graphics* g)
 		int aGridX, aGridY;
 		if (P2GetPreviewState(aSeed, aImitater, aUsable, aGridX, aGridY))
 		{
-			P2EnsurePreviewPlant(aSeed, aImitater);
+			P2EnsurePreviewPlant(aSeed, aImitater, aUsable);
 			P2DrawPreviewPlant(g, aGridX, aGridY, aUsable);
 		}
 	}
