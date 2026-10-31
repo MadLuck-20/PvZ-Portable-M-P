@@ -27,6 +27,7 @@
 #include "../System/PlayerInfo.h"
 #include "../../PvzpLib/PvzpStringFile.h"
 #include "widget/ListWidget.h"
+#include "../System/NetworkSession.h"
 
 static constexpr ListWidgetColorScheme gUserListWidgetColors{
 	.mBkg = Color(23, 24, 35),
@@ -49,6 +50,8 @@ UserDialog::UserDialog(LawnApp* theApp) : LawnDialog(theApp, Dialogs::DIALOG_USE
 
 	mRenameButton = MakeButton(UserDialog::UserDialog_RenameUser, this, mApp->GetString("RENAME_BUTTON", "Rename"));
 	mDeleteButton = MakeButton(UserDialog::UserDialog_DeleteUser, this, mApp->GetString("DELETE_BUTTON", "Delete"));
+	mJoinButton = MakeButton(UserDialog::UserDialog_JoinNetwork, this, "Join");
+	mCreateButton = MakeButton(UserDialog::UserDialog_CreateNetwork, this, "Create");
 
 	mNumUsers = 0;
 	if (theApp->mPlayerInfo)
@@ -75,7 +78,7 @@ UserDialog::UserDialog(LawnApp* theApp) : LawnDialog(theApp, Dialogs::DIALOG_USE
 	}
 
 	mTallBottom = true;
-	CalcSize(210, 270);
+	CalcSize(210, 310);
 }
 
 UserDialog::~UserDialog() = default;
@@ -86,6 +89,8 @@ void UserDialog::Resize(int theX, int theY, int theWidth, int theHeight)
 	mUserList->Resize(GetLeft() + 30, GetTop() + 4, GetWidth() - 60, 200);
 	mRenameButton->Layout(LayoutFlags::LAY_SameLeft | LayoutFlags::LAY_Above | LayoutFlags::LAY_SameHeight | LayoutFlags::LAY_SameWidth, mLawnYesButton.get(), 0, 0, 0, 0);
 	mDeleteButton->Layout(LayoutFlags::LAY_SameLeft | LayoutFlags::LAY_Above | LayoutFlags::LAY_SameHeight | LayoutFlags::LAY_SameWidth, mLawnNoButton.get(), 0, 0, 0, 0);
+	mCreateButton->Layout(LayoutFlags::LAY_SameLeft | LayoutFlags::LAY_Above | LayoutFlags::LAY_SameHeight | LayoutFlags::LAY_SameWidth, mRenameButton.get(), 0, 0, 0, 0);
+	mJoinButton->Layout(LayoutFlags::LAY_SameLeft | LayoutFlags::LAY_Above | LayoutFlags::LAY_SameHeight | LayoutFlags::LAY_SameWidth, mDeleteButton.get(), 0, 0, 0, 0);
 }
 
 int UserDialog::GetPreferredHeight(int theWidth)
@@ -99,6 +104,8 @@ void UserDialog::AddedToManager(WidgetManager* theWidgetManager)
 	AddWidget(mUserList.get());
 	AddWidget(mDeleteButton.get());
 	AddWidget(mRenameButton.get());
+	AddWidget(mJoinButton.get());
+	AddWidget(mCreateButton.get());
 }
 
 void UserDialog::RemovedFromManager(WidgetManager* theWidgetManager)
@@ -107,6 +114,8 @@ void UserDialog::RemovedFromManager(WidgetManager* theWidgetManager)
 	RemoveWidget(mUserList.get());
 	RemoveWidget(mDeleteButton.get());
 	RemoveWidget(mRenameButton.get());
+	RemoveWidget(mJoinButton.get());
+	RemoveWidget(mCreateButton.get());
 }
 
 std::string UserDialog::GetSelName()
@@ -169,6 +178,24 @@ void UserDialog::ListClicked([[maybe_unused]] int theId, int theIdx, int theClic
 void UserDialog::ButtonDepress(int theId)
 {
 	LawnDialog::ButtonDepress(theId);
+	if (theId == UserDialog::UserDialog_CreateNetwork)
+	{
+		std::string anError;
+		if (PvZNetwork::StartHost(24800, &anError))
+		{
+			mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Network Game", "Hosting on port 24800. Share your IP address with the other player.", "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
+		}
+		else
+		{
+			mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Network Error", anError, "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
+		}
+		return;
+	}
+	if (theId == UserDialog::UserDialog_JoinNetwork)
+	{
+		mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Join Network Game", "Joining by IP will be enabled in the next networking step. The connection layer is ready.", "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
+		return;
+	}
 	std::string aSelName = GetSelName();
 	if (!aSelName.empty())
 	{

@@ -38,13 +38,17 @@ protected:
 	enum
 	{
 		UserDialog_RenameUser,
-		UserDialog_DeleteUser
+		UserDialog_DeleteUser,
+		UserDialog_JoinNetwork,
+		UserDialog_CreateNetwork
 	};
 
 public:
 	std::unique_ptr<ListWidget>	mUserList;
 	std::unique_ptr<DialogButton>	mRenameButton;
 	std::unique_ptr<DialogButton>	mDeleteButton;
+	std::unique_ptr<DialogButton>	mJoinButton;
+	std::unique_ptr<DialogButton>	mCreateButton;
 	int					mNumUsers;
 
 public:
