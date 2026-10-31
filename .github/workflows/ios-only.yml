@@ -77,3 +77,46 @@ jobs:
       with:
         name: pvz-portable-ios
         path: dist/
+  build-windows:
+    name: Build for Windows (x86_64)
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Set up MSYS2 UCRT64
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        install: >-
+          base-devel
+          mingw-w64-ucrt-x86_64-cmake
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-libjpeg-turbo
+          mingw-w64-ucrt-x86_64-libopenmpt
+          mingw-w64-ucrt-x86_64-libpng
+          mingw-w64-ucrt-x86_64-ninja
+          mingw-w64-ucrt-x86_64-SDL2
+
+    - name: Configure and build PvZ-Portable for Windows
+      shell: msys2 {0}
+      run: |
+        cmake -G Ninja -B build-windows \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCONSOLE=OFF \
+          -DBUILD_STATIC=ON \
+          -DCMAKE_COLOR_DIAGNOSTICS=ON
+        cmake --build build-windows --parallel
+
+        mkdir -p dist
+        cp build-windows/pvz-portable.exe dist/
+        strip dist/pvz-portable.exe
+
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: pvz-portable-windows-ucrt64
+        path: dist/pvz-portable.exe
+
