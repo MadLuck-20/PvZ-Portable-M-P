@@ -3,8 +3,10 @@
 #include "../../LawnApp.h"
 #include "../../Resources.h"
 #include "../Board.h"
+#include "../SeedPacket.h"
 #include "../Widget/NewOptionsDialog.h"
 #include "../Widget/GameButton.h"
+#include "../Widget/SeedChooserScreen.h"
 #include "widget/WidgetManager.h"
 #include "widget/Dialog.h"
 #include "widget/ButtonWidget.h"
@@ -14,6 +16,7 @@
 #include "graphics/Graphics.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <vector>
 
 using namespace Sexy;
@@ -57,6 +60,71 @@ namespace
 	const SDL_GameControllerButton kDirButtons[4] = {
 		SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN,
 		SDL_CONTROLLER_BUTTON_DPAD_LEFT, SDL_CONTROLLER_BUTTON_DPAD_RIGHT };
+
+	// ---- shared "jump to the neighbouring option" search ----
+
+	struct NavItem
+	{
+		int mCX;
+		int mCY;
+	};
+
+	// Directions: 0 up, 1 down, 2 left, 3 right. Moves one row (or column) at a time: it first
+	// finds the nearest row in that direction and only then prefers the option lined up with
+	// the current one, so nothing in between is ever skipped. Returns -1 if there is none.
+	int FindNext(const std::vector<NavItem>& theItems, int theCurrent, int theDirection)
+	{
+		const bool aVertical = theDirection < 2;
+		const int kSidewaysLimit = 40;	// left/right moves stay on (roughly) the same row
+		const int kBand = aVertical ? 14 : 20;
+		const NavItem& aCur = theItems[theCurrent];
+
+		auto Measure = [&](const NavItem& theItem, int& thePrimary, int& theSideways)
+		{
+			const int aDX = theItem.mCX - aCur.mCX;
+			const int aDY = theItem.mCY - aCur.mCY;
+			switch (theDirection)
+			{
+			case 0:  thePrimary = -aDY; theSideways = std::abs(aDX); break;
+			case 1:  thePrimary = aDY;  theSideways = std::abs(aDX); break;
+			case 2:  thePrimary = -aDX; theSideways = std::abs(aDY); break;
+			default: thePrimary = aDX;  theSideways = std::abs(aDY); break;
+			}
+		};
+
+		int aMinPrimary = -1;
+		for (int i = 0; i < static_cast<int>(theItems.size()); i++)
+		{
+			if (i == theCurrent)
+				continue;
+			int aPrimary, aSideways;
+			Measure(theItems[i], aPrimary, aSideways);
+			if (aPrimary < 3 || (!aVertical && aSideways > kSidewaysLimit))
+				continue;
+			if (aMinPrimary < 0 || aPrimary < aMinPrimary)
+				aMinPrimary = aPrimary;
+		}
+		if (aMinPrimary < 0)
+			return -1;
+
+		int aBest = -1;
+		int aBestSideways = 0;
+		for (int i = 0; i < static_cast<int>(theItems.size()); i++)
+		{
+			if (i == theCurrent)
+				continue;
+			int aPrimary, aSideways;
+			Measure(theItems[i], aPrimary, aSideways);
+			if (aPrimary < 3 || (!aVertical && aSideways > kSidewaysLimit) || aPrimary > aMinPrimary + kBand)
+				continue;
+			if (aBest < 0 || aSideways < aBestSideways)
+			{
+				aBest = i;
+				aBestSideways = aSideways;
+			}
+		}
+		return aBest;
+	}
 
 	void ResetHold()
 	{
@@ -185,47 +253,27 @@ namespace
 		return aBest;
 	}
 
-	// Move the selection to the nearest option in a direction (0 up, 1 down, 2 left, 3 right).
+	// Move the selection to the neighbouring option in a direction (0 up, 1 down, 2 left, 3 right).
 	bool MoveFocus(LawnApp* theApp, const std::vector<Widget*>& theItems, Dialog* theDialog, int theDirection)
 	{
-		int aCurX, aCurY;
-		CenterOf(sFocus, aCurX, aCurY);
-
-		Widget* aBest = nullptr;
-		float aBestScore = 0.0f;
-		for (Widget* aWidget : theItems)
+		std::vector<NavItem> aNav;
+		int aCurrent = -1;
+		for (int i = 0; i < static_cast<int>(theItems.size()); i++)
 		{
-			if (aWidget == sFocus)
-				continue;
-
-			int aCX, aCY;
-			CenterOf(aWidget, aCX, aCY);
-			const float aDX = static_cast<float>(aCX - aCurX);
-			const float aDY = static_cast<float>(aCY - aCurY);
-
-			float aPrimary, aSideways;
-			switch (theDirection)
-			{
-			case 0:  aPrimary = -aDY; aSideways = std::fabs(aDX); break;
-			case 1:  aPrimary = aDY;  aSideways = std::fabs(aDX); break;
-			case 2:  aPrimary = -aDX; aSideways = std::fabs(aDY); break;
-			default: aPrimary = aDX;  aSideways = std::fabs(aDY); break;
-			}
-			if (aPrimary < 3.0f)
-				continue; // not in that direction
-
-			const float aScore = aPrimary + 2.0f * aSideways;
-			if (aBest == nullptr || aScore < aBestScore)
-			{
-				aBest = aWidget;
-				aBestScore = aScore;
-			}
+			NavItem aItem;
+			CenterOf(theItems[i], aItem.mCX, aItem.mCY);
+			aNav.push_back(aItem);
+			if (theItems[i] == sFocus)
+				aCurrent = i;
 		}
-
-		if (aBest == nullptr)
+		if (aCurrent < 0)
 			return false;
 
-		SetFocus(theApp, aBest, theDialog, true);
+		const int aNext = FindNext(aNav, aCurrent, theDirection);
+		if (aNext < 0)
+			return false;
+
+		SetFocus(theApp, theItems[aNext], theDialog, true);
 		theApp->PlaySample(Sexy::SOUND_BUTTONCLICK);
 		return true;
 	}
@@ -282,6 +330,207 @@ namespace
 
 		if (aDelta != 0.0)
 			SetSliderValue(sSlider, std::clamp(sSlider->mVal + aDelta, 0.0, 1.0));
+	}
+
+	// ---- seed chooser (the plant selection screen shown before a level) ----
+	//
+	// Player 2 moves a blue frame over the plant slots with the D-pad / left stick, X picks the
+	// plant under the frame, and O takes back the last plant player 2 picked (the frame then goes
+	// back to that plant's slot). When the bank is full the frame moves to the Start button: X
+	// starts the level, O takes back the last pick. Touch keeps working at the same time.
+
+	bool					sChooserActive = false;
+	SeedChooserScreen*		sChooserPtr = nullptr;	// only ever compared, never used unless it is the live screen
+	SeedType				sChooserSeed = SEED_PEASHOOTER;
+	bool					sChooserOnStart = false;
+	std::vector<SeedType>	sChooserPicks;			// player 2's picks, oldest first
+	int						sChooserHold[4] = { 0, 0, 0, 0 };
+
+	void ResetChooser()
+	{
+		sChooserActive = false;
+		sChooserPtr = nullptr;
+		sChooserSeed = SEED_PEASHOOTER;
+		sChooserOnStart = false;
+		sChooserPicks.clear();
+		for (int& aHold : sChooserHold)
+			aHold = 0;
+	}
+
+	bool BankIsFull(SeedChooserScreen* theChooser)
+	{
+		return theChooser->mSeedsInBank == theChooser->mBoard->mSeedBank->mNumPackets;
+	}
+
+	// Seeds still flying are landed first, exactly like a click on the screen does.
+	void LandFlyingSeeds(SeedChooserScreen* theChooser)
+	{
+		if (theChooser->mSeedsInFlight > 0)
+		{
+			for (int i = 0; i < NUM_SEEDS_IN_CHOOSER; i++)
+				theChooser->LandFlyingSeed(theChooser->mChosenSeeds[i]);
+		}
+	}
+
+	void PickSeed(LawnApp* theApp, SeedChooserScreen* theChooser, SeedType theSeed)
+	{
+		LandFlyingSeeds(theChooser);
+		if (!theApp->HasSeedType(theSeed))
+			return;
+		if (theChooser->SeedNotAllowedToPick(theSeed) || theChooser->SeedNotAllowedDuringTrial(theSeed))
+		{
+			theApp->PlaySample(Sexy::SOUND_BUZZER);
+			return;
+		}
+
+		ChosenSeed& aChosen = theChooser->mChosenSeeds[theSeed];
+		if (aChosen.mSeedState != SEED_IN_CHOOSER || BankIsFull(theChooser))
+			return;
+
+		theChooser->ClickedSeedInChooser(aChosen);
+		if (aChosen.mSeedState == SEED_FLYING_TO_BANK)
+		{
+			sChooserPicks.push_back(theSeed);
+			if (BankIsFull(theChooser))
+				sChooserOnStart = true; // the bank is full: the frame moves to the Start button
+		}
+	}
+
+	void UndoPick(LawnApp* theApp, SeedChooserScreen* theChooser)
+	{
+		LandFlyingSeeds(theChooser);
+		while (!sChooserPicks.empty())
+		{
+			const SeedType aSeed = sChooserPicks.back();
+			ChosenSeed& aChosen = theChooser->mChosenSeeds[aSeed];
+			if (aChosen.mSeedState == SEED_IN_BANK)
+			{
+				if (aChosen.mCrazyDavePicked)
+				{
+					theApp->PlaySample(Sexy::SOUND_BUZZER);
+					return;
+				}
+				theChooser->ClickedSeedInBank(aChosen);
+				sChooserPicks.pop_back();
+				sChooserSeed = aSeed;		// the frame goes back to the plant that was taken back
+				sChooserOnStart = false;
+				return;
+			}
+			sChooserPicks.pop_back(); // no longer in the bank (taken back by touch)
+		}
+	}
+
+	void RunChooser(LawnApp* theApp, SeedChooserScreen* theChooser)
+	{
+		if (!Player2Input::IsConnected() || !theChooser->mVisible || !theChooser->mMouseVisible ||
+			theChooser->mChooseState != CHOOSE_NORMAL || theChooser->mBoard == nullptr)
+		{
+			sChooserActive = false;
+			return;
+		}
+
+		if (sChooserPtr != theChooser)
+		{
+			ResetChooser();
+			sChooserPtr = theChooser;
+		}
+		sChooserActive = true;
+		theApp->mWidgetManager->MarkAllDirty(); // redraw every tick so the frame leaves no trail
+
+		const bool aStartEnabled = !theChooser->mStartButton->mDisabled;
+		if (!aStartEnabled || !BankIsFull(theChooser))
+			sChooserOnStart = false;
+		if (!theApp->HasSeedType(sChooserSeed))
+			sChooserSeed = SEED_PEASHOOTER;
+
+		// Every owned plant slot, plus the Start button while it can be pressed.
+		std::vector<NavItem> aNav;
+		std::vector<int> aIds;		// plant type, or -1 for the Start button
+		int aCurrent = -1;
+		for (int aType = 0; aType < NUM_SEEDS_IN_CHOOSER; aType++)
+		{
+			if (!theApp->HasSeedType(static_cast<SeedType>(aType)))
+				continue;
+			int aX, aY;
+			theChooser->GetSeedPositionInChooser(aType, aX, aY);
+			aNav.push_back({ aX + SEED_PACKET_WIDTH / 2, aY + SEED_PACKET_HEIGHT / 2 });
+			aIds.push_back(aType);
+			if (!sChooserOnStart && aType == static_cast<int>(sChooserSeed))
+				aCurrent = static_cast<int>(aIds.size()) - 1;
+		}
+		if (aStartEnabled)
+		{
+			aNav.push_back({ theChooser->mStartButton->mX + theChooser->mStartButton->mWidth / 2,
+				theChooser->mStartButton->mY + theChooser->mStartButton->mHeight / 2 });
+			aIds.push_back(-1);
+			if (sChooserOnStart)
+				aCurrent = static_cast<int>(aIds.size()) - 1;
+		}
+		if (aCurrent < 0)
+		{
+			if (aNav.empty())
+				return;
+			aCurrent = 0;
+		}
+
+		// O: take back the last plant player 2 picked.
+		if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_B))
+		{
+			UndoPick(theApp, theChooser);
+			return;
+		}
+
+		// X: pick the plant under the frame, or start the level when the frame is on Start.
+		if (Player2Input::JustPressed(SDL_CONTROLLER_BUTTON_A))
+		{
+			if (sChooserOnStart)
+			{
+				LandFlyingSeeds(theChooser);
+				theApp->PlaySample(Sexy::SOUND_TAP);
+				sChooserActive = false;
+				// 100 is SeedChooserScreen_Start (a private enumerator). This may open a
+				// confirmation dialog or close the screen, so nothing may touch it afterwards.
+				theChooser->ButtonDepress(100);
+				return;
+			}
+			PickSeed(theApp, theChooser, sChooserSeed);
+			return;
+		}
+
+		// D-pad or left stick: jump to the neighbouring slot, repeating while held.
+		float aStickX = 0.0f, aStickY = 0.0f;
+		Player2Input::GetLeftStick(aStickX, aStickY);
+		const bool aVertical = std::fabs(aStickY) >= std::fabs(aStickX);
+		const bool aActive[4] = {
+			Player2Input::IsDown(kDirButtons[0]) || (aVertical && aStickY < -kStickThreshold),
+			Player2Input::IsDown(kDirButtons[1]) || (aVertical && aStickY > kStickThreshold),
+			Player2Input::IsDown(kDirButtons[2]) || (!aVertical && aStickX < -kStickThreshold),
+			Player2Input::IsDown(kDirButtons[3]) || (!aVertical && aStickX > kStickThreshold) };
+		for (int i = 0; i < 4; i++)
+		{
+			if (aActive[i])
+			{
+				if (sChooserHold[i] == 0 || (sChooserHold[i] > kRepeatDelay && (sChooserHold[i] - kRepeatDelay) % kRepeatEvery == 0))
+				{
+					const int aNext = FindNext(aNav, aCurrent, i);
+					if (aNext >= 0)
+					{
+						if (aIds[aNext] < 0)
+							sChooserOnStart = true;
+						else
+						{
+							sChooserOnStart = false;
+							sChooserSeed = static_cast<SeedType>(aIds[aNext]);
+						}
+						aCurrent = aNext;
+						theApp->PlaySample(Sexy::SOUND_BUTTONCLICK);
+					}
+				}
+				sChooserHold[i]++;
+			}
+			else
+				sChooserHold[i] = 0;
+		}
 	}
 
 	void CloseOptions(Dialog* theDialog)
@@ -417,7 +666,7 @@ void Player2Menu::NotifyPointerDown()
 
 bool Player2Menu::IsActive()
 {
-	return sOwner == Owner::P2 && sDialogsOpen;
+	return (sOwner == Owner::P2 && sDialogsOpen) || sChooserActive;
 }
 
 void Player2Menu::Update(LawnApp* theApp)
@@ -426,6 +675,16 @@ void Player2Menu::Update(LawnApp* theApp)
 		return;
 
 	sDialogsOpen = theApp->GetDialogCount() > 0;
+
+	// The plant selection screen shown before a level. Dialogs opened over it (almanac,
+	// confirmations...) are handled by the menu code below.
+	SeedChooserScreen* aChooser = theApp->mSeedChooserScreen.get();
+	if (aChooser == nullptr)
+		ResetChooser();
+	else if (sDialogsOpen)
+		sChooserActive = false;
+	else
+		RunChooser(theApp, aChooser);
 
 	if (!sDialogsOpen)
 	{
@@ -458,9 +717,40 @@ void Player2Menu::Update(LawnApp* theApp)
 
 void Player2Menu::Draw(Sexy::Graphics* g)
 {
-	// The game's own button highlight already shows the selected option, so only the
+	// Seed chooser: blue frame on the slot (or the Start button) player 2 is on, with its ID.
+	// The pointer is checked against the live screen first, since touch can close it at any time.
+	if (sChooserActive && sChooserPtr != nullptr && gLawnApp != nullptr && sChooserPtr == gLawnApp->mSeedChooserScreen.get())
+	{
+		SeedChooserScreen* aChooser = sChooserPtr;
+		const Point aBase = aChooser->GetAbsPos();
+		int aX, aY, aW, aH;
+		if (sChooserOnStart)
+		{
+			aX = aBase.mX + aChooser->mStartButton->mX;
+			aY = aBase.mY + aChooser->mStartButton->mY;
+			aW = aChooser->mStartButton->mWidth;
+			aH = aChooser->mStartButton->mHeight;
+		}
+		else
+		{
+			int aSlotX, aSlotY;
+			aChooser->GetSeedPositionInChooser(sChooserSeed, aSlotX, aSlotY);
+			aX = aBase.mX + aSlotX;
+			aY = aBase.mY + aSlotY;
+			aW = SEED_PACKET_WIDTH;
+			aH = SEED_PACKET_HEIGHT;
+		}
+
+		g->SetColor(Color(0, 160, 255, 255));
+		for (int t = 0; t < 3; t++)
+			g->DrawRect(aX - 3 - t, aY - 3 - t, aW + 6 + 2 * t, aH + 6 + 2 * t);
+		g->SetFont(FONT_PICO129);
+		g->DrawString("P2", aX + 4, (aY >= 16) ? aY - 6 : aY + aH + 14);
+	}
+
+	// The game's own button highlight already shows the selected menu option, so only the
 	// hint for an adjusting slider is drawn.
-	if (!IsActive() || !sFocusDrawable || sFocus == nullptr || sSlider == nullptr)
+	if (!(sOwner == Owner::P2 && sDialogsOpen) || !sFocusDrawable || sFocus == nullptr || sSlider == nullptr)
 		return;
 
 	const Point aPos = sFocus->GetAbsPos();
