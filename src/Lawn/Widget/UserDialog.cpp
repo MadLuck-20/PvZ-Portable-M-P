@@ -55,7 +55,7 @@ UserDialog::UserDialog(LawnApp* theApp) : LawnDialog(theApp, Dialogs::DIALOG_USE
 	mDeleteButton = MakeButton(UserDialog::UserDialog_DeleteUser, this, mApp->GetString("DELETE_BUTTON", "Delete"));
 	mJoinButton = MakeButton(UserDialog::UserDialog_JoinNetwork, this, "Join");
 	mCreateButton = MakeButton(UserDialog::UserDialog_CreateNetwork, this, "Create");
-	mJoinAddressEdit = CreateEditWidget(0, this, this);
+	mJoinAddressEdit = CreateEditWidget(1, this, this);
 	mJoinAddressEdit->mMaxChars = 253;
 	mJoinAddressEdit->AddWidthCheckFont(FONT_BRIANNETOD16, 300);
 
@@ -113,7 +113,6 @@ void UserDialog::AddedToManager(WidgetManager* theWidgetManager)
 	AddWidget(mRenameButton.get());
 	AddWidget(mJoinButton.get());
 	AddWidget(mCreateButton.get());
-	AddWidget(mJoinAddressEdit.get());
 }
 
 void UserDialog::RemovedFromManager(WidgetManager* theWidgetManager)
@@ -124,7 +123,8 @@ void UserDialog::RemovedFromManager(WidgetManager* theWidgetManager)
 	RemoveWidget(mRenameButton.get());
 	RemoveWidget(mJoinButton.get());
 	RemoveWidget(mCreateButton.get());
-	RemoveWidget(mJoinAddressEdit.get());
+	if (mJoinAddressVisible)
+		RemoveWidget(mJoinAddressEdit.get());
 }
 
 std::string UserDialog::GetSelName()
@@ -198,6 +198,15 @@ void UserDialog::ButtonDepress(int theId)
 	// Create must never enter the Join address-edit flow.
 	if (theId == UserDialog::UserDialog_CreateNetwork)
 	{
+		// The Join edit box is added to the widget tree only while Join is active.
+		// Remove it and release keyboard focus before handling Create.
+		if (mJoinAddressVisible)
+		{
+			if (mWidgetManager)
+				mWidgetManager->SetFocus(nullptr);
+			RemoveWidget(mJoinAddressEdit.get());
+			mJoinAddressVisible = false;
+		}
 		std::string anError;
 		if (PvZNetwork::StartHost(24800, &anError))
 		{
@@ -214,6 +223,7 @@ void UserDialog::ButtonDepress(int theId)
 		if (!mJoinAddressVisible)
 		{
 			mJoinAddressVisible = true;
+			AddWidget(mJoinAddressEdit.get());
 			mJoinAddressEdit->SetText("", true);
 			mJoinAddressEdit->mCursorPos = 0;
 			mJoinAddressEdit->mHilitePos = 0;
@@ -232,6 +242,9 @@ void UserDialog::ButtonDepress(int theId)
 		std::string anError;
 		if (PvZNetwork::Connect(anAddress, 24800, &anError))
 		{
+			if (mWidgetManager)
+				mWidgetManager->SetFocus(nullptr);
+			RemoveWidget(mJoinAddressEdit.get());
 			mJoinAddressVisible = false;
 			mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Join Network Game", "Connecting to " + anAddress + ":24800. Keep the game open while the connection is established.", "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
 		}
@@ -258,10 +271,10 @@ void UserDialog::ButtonDepress(int theId)
 
 void UserDialog::EditWidgetText([[maybe_unused]] int theId, [[maybe_unused]] const std::string& theString)
 {
+	// The edit widget is registered only in Join mode. Enter confirms the address;
+	// it must never trigger the base dialog's global OK action.
 	if (mJoinAddressVisible)
 		ButtonDepress(UserDialog_JoinNetwork);
-	else
-		mApp->ButtonDepress(mId + 2000);
 }
 
 bool UserDialog::AllowChar([[maybe_unused]] int theId, char theChar)
