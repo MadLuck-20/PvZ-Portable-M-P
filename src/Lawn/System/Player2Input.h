@@ -2,6 +2,7 @@
 #define __PLAYER2INPUT_H__
 
 #include <SDL.h>
+#include <cstdint>
 
 namespace Sexy { class Graphics; }
 
@@ -15,6 +16,11 @@ public:
 	static void		OnDeviceRemoved(SDL_JoystickID theInstanceID);
 
 	static bool		IsConnected();
+
+	// Remote P2 input is injected by NetworkSession on the host. These methods
+	// are intentionally public only to the networking layer; local/offline input
+	// remains unchanged when remote input is inactive.
+	static void		SetRemoteInput(bool active, uint32_t buttons, int x, int y, float stickX, float stickY, bool leftTrigger, bool rightTrigger);
 	static void		Update();					// call once per Board::Update
 	static void		Draw(Sexy::Graphics* g);			// call from Board::DrawUITop
 
@@ -26,6 +32,7 @@ public:
 
 	// L2 / R2 are analog axes on SDL; true only on the Update() where they pass the threshold.
 	static bool		TriggerJustPressed(bool theLeft);
+	static bool		IsTriggerDown(bool theLeft);
 
 	static bool		IsDown(SDL_GameControllerButton theButton);
 

@@ -1,4 +1,5 @@
 #include "Player2Input.h"
+#include "NetworkSession.h"
 #include "../../GameConstants.h"
 #include "../../SexyAppFramework/graphics/Graphics.h"
 #include <algorithm>
@@ -18,6 +19,13 @@ static bool					gCursorFrozen = false;
 static float				gMinX = 0.0f, gMinY = 0.0f, gMaxX = (float)BOARD_WIDTH, gMaxY = (float)BOARD_HEIGHT;
 static bool					gTriggerPrev[2] = {};
 static bool					gTriggerCurr[2] = {};
+static bool					gRemoteActive = false;
+static uint32_t				gRemoteButtons = 0;
+static float					gRemoteStickX = 0.0f, gRemoteStickY = 0.0f;
+static bool					gRemoteTriggers[2] = {};
+static bool					gRemoteButtonPrev[SDL_CONTROLLER_BUTTON_MAX] = {};
+static bool					gRemoteButtonCurr[SDL_CONTROLLER_BUTTON_MAX] = {};
+static bool					gRemoteTriggerPrev[2] = {}, gRemoteTriggerCurr[2] = {};
 
 static constexpr float		kDeadZone = 0.20f;
 static constexpr float		kSpeedPixelsPerUpdate = 5.5f;
@@ -53,11 +61,39 @@ void Player2Input::OnDeviceRemoved(SDL_JoystickID theInstanceID)
 
 bool Player2Input::IsConnected()
 {
-	return gController != nullptr;
+	return gRemoteActive || gController != nullptr;
+}
+
+void Player2Input::SetRemoteInput(bool active, uint32_t buttons, int x, int y, float stickX, float stickY, bool leftTrigger, bool rightTrigger)
+{
+	if (!active)
+	{
+		gRemoteActive = false;
+		gRemoteButtons = 0;
+		gRemoteStickX = gRemoteStickY = 0.0f;
+		gRemoteTriggers[0] = gRemoteTriggers[1] = false;
+		return;
+	}
+	gRemoteActive = true;
+	gRemoteButtons = buttons;
+	gRemoteStickX = std::clamp(stickX, -1.0f, 1.0f);
+	gRemoteStickY = std::clamp(stickY, -1.0f, 1.0f);
+	gRemoteTriggers[0] = leftTrigger;
+	gRemoteTriggers[1] = rightTrigger;
+	SetPosition(x, y);
 }
 
 void Player2Input::Update()
 {
+	for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX; ++i)
+	{
+		gRemoteButtonPrev[i] = gRemoteButtonCurr[i];
+		gRemoteButtonCurr[i] = gRemoteActive && ((gRemoteButtons & (uint32_t(1) << i)) != 0);
+	}
+	gRemoteTriggerPrev[0] = gRemoteTriggerCurr[0];
+	gRemoteTriggerPrev[1] = gRemoteTriggerCurr[1];
+	gRemoteTriggerCurr[0] = gRemoteActive && gRemoteTriggers[0];
+	gRemoteTriggerCurr[1] = gRemoteActive && gRemoteTriggers[1];
 	for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX; i++)
 	{
 		gButtonPrev[i] = gButtonCurr[i];
@@ -83,35 +119,54 @@ void Player2Input::Update()
 			for (int i = 0; i < aNum && gController == nullptr; i++)
 				OnDeviceAdded(i);
 		}
-		return;
+	}
+	else if (!gRemoteActive && !gCursorFrozen)
+	{
+		float aDX = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTX));
+		float aDY = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTY));
+		gCursorX = std::clamp(gCursorX + aDX * kSpeedPixelsPerUpdate, gMinX, gMaxX);
+		gCursorY = std::clamp(gCursorY + aDY * kSpeedPixelsPerUpdate, gMinY, gMaxY);
 	}
 
-	float aDX = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTX));
-	float aDY = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTY));
-	if (gCursorFrozen)
-		return;
-
-	gCursorX = std::clamp(gCursorX + aDX * kSpeedPixelsPerUpdate, gMinX, gMaxX);
-	gCursorY = std::clamp(gCursorY + aDY * kSpeedPixelsPerUpdate, gMinY, gMaxY);
+	// Pump networking once per game update. The host receives and injects remote
+	// P2 input; the client transmits its locally sampled controller state.
+	PvZNetwork::Update();
 }
 
 bool Player2Input::JustPressed(SDL_GameControllerButton theButton)
 {
 	if (theButton < 0 || theButton >= SDL_CONTROLLER_BUTTON_MAX)
 		return false;
+	if (gRemoteActive)
+		return gRemoteButtonCurr[theButton] && !gRemoteButtonPrev[theButton];
 	return gButtonCurr[theButton] && !gButtonPrev[theButton];
 }
 
 bool Player2Input::TriggerJustPressed(bool theLeft)
 {
 	const int i = theLeft ? 0 : 1;
+	if (gRemoteActive)
+		return gRemoteTriggerCurr[i] && !gRemoteTriggerPrev[i];
 	return gTriggerCurr[i] && !gTriggerPrev[i];
+}
+
+bool Player2Input::IsTriggerDown(bool theLeft)
+{
+	const int i = theLeft ? 0 : 1;
+	if (gRemoteActive)
+		return gRemoteTriggerCurr[i];
+	return gTriggerCurr[i];
 }
 
 void Player2Input::GetLeftStick(float& theX, float& theY)
 {
 	theX = 0.0f;
 	theY = 0.0f;
+	if (gRemoteActive)
+	{
+		theX = gRemoteStickX; theY = gRemoteStickY;
+		return;
+	}
 	if (gController == nullptr)
 		return;
 	theX = NormalizeAxis(SDL_GameControllerGetAxis(gController, SDL_CONTROLLER_AXIS_LEFTX));
@@ -127,6 +182,8 @@ bool Player2Input::IsDown(SDL_GameControllerButton theButton)
 {
 	if (theButton < 0 || theButton >= SDL_CONTROLLER_BUTTON_MAX)
 		return false;
+	if (gRemoteActive)
+		return gRemoteButtonCurr[theButton];
 	return gButtonCurr[theButton];
 }
 
@@ -149,7 +206,7 @@ int Player2Input::GetY() { return (int)gCursorY; }
 
 void Player2Input::Draw(Sexy::Graphics* g)
 {
-	if (gController == nullptr)
+	if (!IsConnected())
 		return;
 
 	// Exact cursor position (the cell frame itself is drawn by the board).
