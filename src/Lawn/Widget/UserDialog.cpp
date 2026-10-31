@@ -193,7 +193,9 @@ void UserDialog::ListClicked([[maybe_unused]] int theId, int theIdx, int theClic
 
 void UserDialog::ButtonDepress(int theId)
 {
-	LawnDialog::ButtonDepress(theId);
+	// Handle network actions before forwarding to LawnDialog. The base dialog
+	// owns OK/Cancel and may interpret overlapping button IDs.
+	// Create must never enter the Join address-edit flow.
 	if (theId == UserDialog::UserDialog_CreateNetwork)
 	{
 		std::string anError;
@@ -229,11 +231,15 @@ void UserDialog::ButtonDepress(int theId)
 
 		std::string anError;
 		if (PvZNetwork::Connect(anAddress, 24800, &anError))
+		{
+			mJoinAddressVisible = false;
 			mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Join Network Game", "Connecting to " + anAddress + ":24800. Keep the game open while the connection is established.", "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
+		}
 		else
 			mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Network Error", anError, "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
 		return;
 	}
+	LawnDialog::ButtonDepress(theId);
 	std::string aSelName = GetSelName();
 	if (!aSelName.empty())
 	{
