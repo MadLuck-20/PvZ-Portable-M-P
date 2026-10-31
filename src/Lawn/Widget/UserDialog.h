@@ -30,6 +30,7 @@
 namespace Sexy
 {
 	class ListWidget;
+	class EditWidget;
 };
 
 class UserDialog : public LawnDialog, public ListListener, public EditListener
@@ -49,6 +50,8 @@ public:
 	std::unique_ptr<DialogButton>	mDeleteButton;
 	std::unique_ptr<DialogButton>	mJoinButton;
 	std::unique_ptr<DialogButton>	mCreateButton;
+	std::unique_ptr<EditWidget>	mJoinAddressEdit;
+	bool					mJoinAddressVisible = false;
 	int					mNumUsers;
 
 public:

@@ -21,6 +21,7 @@
 
 #include "UserDialog.h"
 #include "GameButton.h"
+#include "widget/EditWidget.h"
 #include "../../LawnApp.h"
 #include "../../Resources.h"
 #include "../System/ProfileMgr.h"
@@ -52,6 +53,9 @@ UserDialog::UserDialog(LawnApp* theApp) : LawnDialog(theApp, Dialogs::DIALOG_USE
 	mDeleteButton = MakeButton(UserDialog::UserDialog_DeleteUser, this, mApp->GetString("DELETE_BUTTON", "Delete"));
 	mJoinButton = MakeButton(UserDialog::UserDialog_JoinNetwork, this, "Join");
 	mCreateButton = MakeButton(UserDialog::UserDialog_CreateNetwork, this, "Create");
+	mJoinAddressEdit = CreateEditWidget(0, this, this);
+	mJoinAddressEdit->mMaxChars = 253;
+	mJoinAddressEdit->AddWidthCheckFont(FONT_BRIANNETOD16, 300);
 
 	mNumUsers = 0;
 	if (theApp->mPlayerInfo)
@@ -91,6 +95,7 @@ void UserDialog::Resize(int theX, int theY, int theWidth, int theHeight)
 	mDeleteButton->Layout(LayoutFlags::LAY_SameLeft | LayoutFlags::LAY_Above | LayoutFlags::LAY_SameHeight | LayoutFlags::LAY_SameWidth, mLawnNoButton.get(), 0, 0, 0, 0);
 	mCreateButton->Layout(LayoutFlags::LAY_SameLeft | LayoutFlags::LAY_Above | LayoutFlags::LAY_SameHeight | LayoutFlags::LAY_SameWidth, mRenameButton.get(), 0, 0, 0, 0);
 	mJoinButton->Layout(LayoutFlags::LAY_SameLeft | LayoutFlags::LAY_Above | LayoutFlags::LAY_SameHeight | LayoutFlags::LAY_SameWidth, mDeleteButton.get(), 0, 0, 0, 0);
+	mJoinAddressEdit->Resize(GetLeft() + 30, GetTop() + 215, GetWidth() - 60, 28);
 }
 
 int UserDialog::GetPreferredHeight(int theWidth)
@@ -106,6 +111,7 @@ void UserDialog::AddedToManager(WidgetManager* theWidgetManager)
 	AddWidget(mRenameButton.get());
 	AddWidget(mJoinButton.get());
 	AddWidget(mCreateButton.get());
+	AddWidget(mJoinAddressEdit.get());
 }
 
 void UserDialog::RemovedFromManager(WidgetManager* theWidgetManager)
@@ -116,6 +122,7 @@ void UserDialog::RemovedFromManager(WidgetManager* theWidgetManager)
 	RemoveWidget(mRenameButton.get());
 	RemoveWidget(mJoinButton.get());
 	RemoveWidget(mCreateButton.get());
+	RemoveWidget(mJoinAddressEdit.get());
 }
 
 std::string UserDialog::GetSelName()
@@ -157,6 +164,13 @@ void UserDialog::FinishRenameUser(const std::string& theNewName)
 void UserDialog::Draw(Graphics* g)
 {
 	LawnDialog::Draw(g);
+	if (mJoinAddressVisible)
+	{
+		g->SetColor(Color(235, 225, 180));
+		g->SetFont(FONT_BRIANNETOD12);
+		g->DrawString("Host IP address or hostname (port 24800):", GetLeft() + 30, GetTop() + 207);
+		DrawEditBox(g, mJoinAddressEdit.get());
+	}
 }
 
 void UserDialog::ListClicked([[maybe_unused]] int theId, int theIdx, int theClickCount)
@@ -193,7 +207,29 @@ void UserDialog::ButtonDepress(int theId)
 	}
 	if (theId == UserDialog::UserDialog_JoinNetwork)
 	{
-		mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Join Network Game", "Joining by IP will be enabled in the next networking step. The connection layer is ready.", "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
+		if (!mJoinAddressVisible)
+		{
+			mJoinAddressVisible = true;
+			mJoinAddressEdit->SetText("", true);
+			mJoinAddressEdit->mCursorPos = 0;
+			mJoinAddressEdit->mHilitePos = 0;
+			if (mWidgetManager)
+				mWidgetManager->SetFocus(mJoinAddressEdit.get());
+			return;
+		}
+
+		const std::string anAddress = mJoinAddressEdit->mString;
+		if (anAddress.empty())
+		{
+			mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Join Network Game", "Enter the host IP address or hostname first.", "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
+			return;
+		}
+
+		std::string anError;
+		if (PvZNetwork::Connect(anAddress, 24800, &anError))
+			mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Join Network Game", "Connecting to " + anAddress + ":24800. Keep the game open while the connection is established.", "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
+		else
+			mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Network Error", anError, "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
 		return;
 	}
 	std::string aSelName = GetSelName();
@@ -214,10 +250,13 @@ void UserDialog::ButtonDepress(int theId)
 
 void UserDialog::EditWidgetText([[maybe_unused]] int theId, [[maybe_unused]] const std::string& theString)
 {
-	mApp->ButtonDepress(mId + 2000);
+	if (mJoinAddressVisible)
+		ButtonDepress(UserDialog_JoinNetwork);
+	else
+		mApp->ButtonDepress(mId + 2000);
 }
 
 bool UserDialog::AllowChar([[maybe_unused]] int theId, char theChar)
 {
-	return isdigit(theChar);
+	return isalnum(static_cast<unsigned char>(theChar)) || theChar == '.' || theChar == '-' || theChar == ':' || theChar == '_';
 }
