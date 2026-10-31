@@ -24,6 +24,8 @@
 #include "widget/EditWidget.h"
 #include "../../LawnApp.h"
 #include "../../Resources.h"
+#include "../LawnCommon.h"
+#include "widget/WidgetManager.h"
 #include "../System/ProfileMgr.h"
 #include "../System/PlayerInfo.h"
 #include "../../PvzpLib/PvzpStringFile.h"
