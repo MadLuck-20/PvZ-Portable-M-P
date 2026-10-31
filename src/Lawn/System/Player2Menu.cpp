@@ -156,6 +156,12 @@ namespace
 		if (sOwner == Owner::P2 && theRestoreMouse && theApp != nullptr && theApp->mWidgetManager != nullptr)
 			theApp->mWidgetManager->MouseMove(sSavedMouseX, sSavedMouseY);
 
+		if (theApp != nullptr)
+		{
+			if (NewOptionsDialog* anOptions = dynamic_cast<NewOptionsDialog*>(theApp->GetDialog(Dialogs::DIALOG_NEWOPTIONS)))
+				anOptions->mP2Highlight = -1;
+		}
+
 		sOwner = Owner::None;
 		sSlider = nullptr;
 		sFocus = nullptr;
@@ -522,8 +528,7 @@ namespace
 							sChooserOnStart = false;
 							sChooserSeed = static_cast<SeedType>(aIds[aNext]);
 						}
-						aCurrent = aNext;
-						theApp->PlaySample(Sexy::SOUND_BUTTONCLICK);
+						aCurrent = aNext; // no sound while moving: the console versions are silent here
 					}
 				}
 				sChooserHold[i]++;
@@ -585,6 +590,24 @@ namespace
 			CenterOf(sFocus, sFocusCX, sFocusCY);
 		}
 		sFocusDrawable = true;
+
+		// Sliders and checkboxes have no highlight of their own: light up their label instead.
+		if (NewOptionsDialog* anOptionsDialog = dynamic_cast<NewOptionsDialog*>(theApp->GetDialog(Dialogs::DIALOG_NEWOPTIONS)))
+		{
+			int aLit = -1;
+			if (anOptionsDialog == dynamic_cast<NewOptionsDialog*>(aTop))
+			{
+				if (sFocus == anOptionsDialog->mMusicVolumeSlider.get())
+					aLit = 0;
+				else if (sFocus == anOptionsDialog->mSfxVolumeSlider.get())
+					aLit = 1;
+				else if (sFocus == anOptionsDialog->mHardwareAccelerationCheckbox.get())
+					aLit = 2;
+				else if (sFocus == anOptionsDialog->mFullscreenCheckbox.get())
+					aLit = 3;
+			}
+			anOptionsDialog->mP2Highlight = aLit;
+		}
 
 		if (sSlider != nullptr && std::find(aItems.begin(), aItems.end(), sSlider) == aItems.end())
 			sSlider = nullptr;

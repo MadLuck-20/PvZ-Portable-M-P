@@ -62,6 +62,7 @@ public:
 	std::unique_ptr<LawnStoneButton>	mRestartButton;
 	std::unique_ptr<NewLawnButton>		mBackToGameButton;
 	bool								mFromGameSelector;
+	int									mP2Highlight = -1;	// option label lit for player 2 (0 music, 1 sfx, 2 3D, 3 fullscreen)
 
 public:
 	NewOptionsDialog(LawnApp* theApp, bool theFromGameSelector);
