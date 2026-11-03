@@ -109,22 +109,31 @@ bool Transport::StartHost(uint16_t port, std::string* error)
 {
 	Disconnect();
 	if (!EnsureSocketRuntime()) { if (error) *error = "Socket runtime initialization failed"; return false; }
-	addrinfo hints{}; hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM; hints.ai_protocol = IPPROTO_TCP; hints.ai_flags = AI_PASSIVE;
-	addrinfo* results = nullptr;
-	const std::string service = std::to_string(port);
-	const int gai = getaddrinfo(nullptr, service.c_str(), &hints, &results);
-	if (gai != 0) { if (error) *error = "Could not resolve local bind address"; return false; }
-	PvzSocket s = kInvalidSocket;
-	for (addrinfo* it = results; it; it = it->ai_next)
+	// Bind directly to the IPv4 wildcard address. Resolving a null local node
+	// with AI_PASSIVE fails on some Android runtimes, even though binding to
+	// INADDR_ANY is supported. IPv4 also covers the common LAN/VPN address
+	// used by the Join dialog.
+	PvzSocket s = static_cast<PvzSocket>(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+	if (s == kInvalidSocket)
 	{
-		s = static_cast<PvzSocket>(socket(it->ai_family, it->ai_socktype, it->ai_protocol));
-		if (s == kInvalidSocket) continue;
-		SetSocketOptions(s);
-		if (bind(s, it->ai_addr, static_cast<int>(it->ai_addrlen)) == 0 && listen(s, 1) == 0) break;
-		CloseSocket(s); s = kInvalidSocket;
+		const auto msg = ErrorText("Create host socket", SocketError());
+		if (error) *error = msg; mImpl->lastError = msg; return false;
 	}
-	freeaddrinfo(results);
-	if (s == kInvalidSocket) { const auto msg = ErrorText("Host listen", SocketError()); if (error) *error = msg; mImpl->lastError = msg; return false; }
+	SetSocketOptions(s);
+	sockaddr_in bindAddress{};
+	bindAddress.sin_family = AF_INET;
+	bindAddress.sin_port = htons(port);
+	bindAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+	if (bind(s, reinterpret_cast<const sockaddr*>(&bindAddress), sizeof(bindAddress)) != 0)
+	{
+		const auto msg = ErrorText("Host bind", SocketError());
+		if (error) *error = msg; mImpl->lastError = msg; CloseSocket(s); return false;
+	}
+	if (listen(s, 1) != 0)
+	{
+		const auto msg = ErrorText("Host listen", SocketError());
+		if (error) *error = msg; mImpl->lastError = msg; CloseSocket(s); return false;
+	}
 	mImpl->listener = s; mImpl->role = TransportRole::Host; mImpl->state = TransportState::Listening; mImpl->lastError.clear();
 	return true;
 }
