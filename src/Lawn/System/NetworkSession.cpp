@@ -115,6 +115,7 @@ void Stop()
 	gHelloSent = false;
 	gSendSequence = 1;
 	gLastInputSequence = 0;
+	gPeerPlatform = "Unknown";
 	ClearRemoteInput();
 	SetStatus("Offline");
 }
@@ -157,11 +158,13 @@ void Update()
 	{
 		if (message.type == MessageType::Hello && gTransport.GetRole() == TransportRole::Host)
 		{
-			gPeerPlatform = ReadPlatform(message);\n\t\t\tgReady = SendPlatformMessage(MessageType::HelloAck);
+			gPeerPlatform = ReadPlatform(message);
+			gReady = SendPlatformMessage(MessageType::HelloAck);
 			SetStatus(gReady ? "Online (host)" : "Connected; handshake failed");
 		}
 		else if (message.type == MessageType::HelloAck && gTransport.GetRole() == TransportRole::Client)
 		{
+			gPeerPlatform = ReadPlatform(message);
 			gReady = true;
 			SetStatus("Online (client)");
 		}
@@ -197,5 +200,7 @@ void Update()
 bool IsOnline() { return gTransport.GetState() != TransportState::Stopped && gTransport.GetState() != TransportState::Error; }
 bool IsHost() { return gTransport.GetRole() == TransportRole::Host; }
 bool IsReady() { return gReady && gTransport.IsConnected(); }
-std::string GetStatus() { return gStatus; }\nstd::string GetLocalPlatform() { return LocalPlatform(); }\nstd::string GetPeerPlatform() { return gPeerPlatform; }
+std::string GetStatus() { return gStatus; }
+std::string GetLocalPlatform() { return LocalPlatform(); }
+std::string GetPeerPlatform() { return gPeerPlatform; }
 }
