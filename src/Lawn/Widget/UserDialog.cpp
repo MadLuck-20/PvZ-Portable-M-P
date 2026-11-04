@@ -102,7 +102,9 @@ void UserDialog::Resize(int theX, int theY, int theWidth, int theHeight)
 
 int UserDialog::GetPreferredHeight(int theWidth)
 {
-	return LawnDialog::GetPreferredHeight(theWidth) + 190;
+	// Reserve a little more vertical space so the multiplayer diagnostics
+	// below the Join address field do not overlap the stacked action buttons.
+	return LawnDialog::GetPreferredHeight(theWidth) + 230;
 }
 
 void UserDialog::AddedToManager(WidgetManager* theWidgetManager)

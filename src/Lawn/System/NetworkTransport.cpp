@@ -24,6 +24,7 @@
 # include <netdb.h>
 # include <netinet/in.h>
 # include <sys/socket.h>
+# include <sys/select.h>
 # include <unistd.h>
   using PvzSocket = int;
   static constexpr PvzSocket kInvalidSocket = -1;
@@ -197,6 +198,29 @@ void Transport::Poll()
 
 	if (mImpl->state == TransportState::Connecting)
 	{
+		// A zero SO_ERROR value alone does not prove that a nonblocking
+		// connect() has completed. First wait until the socket is writable
+		// (or exceptional), then inspect SO_ERROR for the final result.
+		fd_set writeSet;
+		fd_set errorSet;
+		FD_ZERO(&writeSet);
+		FD_ZERO(&errorSet);
+		FD_SET(mImpl->peer, &writeSet);
+		FD_SET(mImpl->peer, &errorSet);
+		timeval timeout{};
+#if defined(_WIN32)
+		const int ready = select(0, nullptr, &writeSet, &errorSet, &timeout);
+#else
+		const int ready = select(mImpl->peer + 1, nullptr, &writeSet, &errorSet, &timeout);
+#endif
+		if (ready < 0)
+		{
+			mImpl->Fail(ErrorText("Check connect", SocketError()));
+			return;
+		}
+		if (ready == 0)
+			return;
+
 		int socketError = 0;
 #if defined(_WIN32)
 		int len = sizeof(socketError);
@@ -204,9 +228,13 @@ void Transport::Poll()
 		socklen_t len = sizeof(socketError);
 #endif
 		if (getsockopt(mImpl->peer, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&socketError), &len) != 0)
-			 socketError = SocketError();
-		if (socketError == 0) mImpl->state = TransportState::Connected;
-		else if (!IsWouldBlock(socketError)) { mImpl->Fail(ErrorText("Finish connect", socketError)); return; }
+			socketError = SocketError();
+		if (socketError != 0)
+		{
+			mImpl->Fail(ErrorText("Finish connect", socketError));
+			return;
+		}
+		mImpl->state = TransportState::Connected;
 	}
 	if (mImpl->state != TransportState::Connected) return;
 
