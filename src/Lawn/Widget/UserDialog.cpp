@@ -173,6 +173,19 @@ void UserDialog::Draw(Graphics* g)
 		g->DrawString("Host IP address or hostname (port 24800):", GetLeft() + 30, GetTop() + 207);
 		DrawEditBox(g, mJoinAddressEdit.get());
 	}
+
+	// Multiplayer diagnostics: visible in the Change User dialog.
+	g->SetColor(Color(235, 225, 180));
+	g->SetFont(FONT_BRIANNETOD12);
+	const std::string aRole = PvZNetwork::IsHost() ? "Host" :
+		(PvZNetwork::IsOnline() ? "Client" : "No role");
+	g->DrawString("Multiplayer: " + PvZNetwork::GetStatus(),
+		GetLeft() + 30, GetTop() + 247);
+	g->DrawString("This device: " + PvZNetwork::GetLocalPlatform() + " (" + aRole + ")",
+		GetLeft() + 30, GetTop() + 263);
+	if (PvZNetwork::IsReady())
+		g->DrawString("Peer: " + PvZNetwork::GetPeerPlatform(),
+			GetLeft() + 30, GetTop() + 279);
 }
 
 void UserDialog::ListClicked([[maybe_unused]] int theId, int theIdx, int theClickCount)

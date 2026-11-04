@@ -16,6 +16,8 @@ namespace PvZNetwork
 	bool IsHost();
 	bool IsReady();
 	std::string GetStatus();
+	std::string GetLocalPlatform();
+	std::string GetPeerPlatform();
 }
 
 #endif

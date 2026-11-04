@@ -18,6 +18,7 @@ namespace
 	uint32_t gSendSequence = 1;
 	uint32_t gLastInputSequence = 0;
 	std::string gStatus = "Offline";
+	std::string gPeerPlatform = "Unknown";
 
 	constexpr uint32_t kLeftTriggerBit = uint32_t(1) << 30;
 	constexpr uint32_t kRightTriggerBit = uint32_t(1) << 31;
@@ -30,6 +31,29 @@ namespace
 		message.type = type;
 		message.sequence = gSendSequence++;
 		return gTransport.Send(message);
+	}
+
+	std::string LocalPlatform()
+	{
+		const char* platform = SDL_GetPlatform();
+		return platform ? platform : "Unknown";
+	}
+
+	bool SendPlatformMessage(MessageType type)
+	{
+		Message message;
+		message.type = type;
+		message.sequence = gSendSequence++;
+		const std::string platform = LocalPlatform();
+		message.payload.assign(platform.begin(), platform.end());
+		return gTransport.Send(message);
+	}
+
+	std::string ReadPlatform(const Message& message)
+	{
+		if (message.payload.empty() || message.payload.size() > 64)
+			return "Unknown";
+		return std::string(message.payload.begin(), message.payload.end());
 	}
 
 	void ClearRemoteInput()
@@ -121,7 +145,7 @@ void Update()
 
 	if (gTransport.GetRole() == TransportRole::Client && state == TransportState::Connected && !gHelloSent)
 	{
-		if (SendSimple(MessageType::Hello))
+		if (SendPlatformMessage(MessageType::Hello))
 		{
 			gHelloSent = true;
 			SetStatus("Connected; waiting for host");
@@ -133,7 +157,7 @@ void Update()
 	{
 		if (message.type == MessageType::Hello && gTransport.GetRole() == TransportRole::Host)
 		{
-			gReady = SendSimple(MessageType::HelloAck);
+			gPeerPlatform = ReadPlatform(message);\n\t\t\tgReady = SendPlatformMessage(MessageType::HelloAck);
 			SetStatus(gReady ? "Online (host)" : "Connected; handshake failed");
 		}
 		else if (message.type == MessageType::HelloAck && gTransport.GetRole() == TransportRole::Client)
@@ -173,5 +197,5 @@ void Update()
 bool IsOnline() { return gTransport.GetState() != TransportState::Stopped && gTransport.GetState() != TransportState::Error; }
 bool IsHost() { return gTransport.GetRole() == TransportRole::Host; }
 bool IsReady() { return gReady && gTransport.IsConnected(); }
-std::string GetStatus() { return gStatus; }
+std::string GetStatus() { return gStatus; }\nstd::string GetLocalPlatform() { return LocalPlatform(); }\nstd::string GetPeerPlatform() { return gPeerPlatform; }
 }
