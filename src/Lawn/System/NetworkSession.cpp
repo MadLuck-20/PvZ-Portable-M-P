@@ -1,6 +1,7 @@
 #include "NetworkSession.h"
 #include "NetworkProtocol.h"
 #include "NetworkTransport.h"
+#include "NetworkDiscovery.h"
 #include "Player2Input.h"
 
 #include <SDL.h>
@@ -84,7 +85,7 @@ namespace
 	}
 }
 
-bool StartHost(uint16_t port, std::string* error)
+bool StartHost(uint16_t port, std::string* error, const std::string& playerName)
 {
 	Stop();
 	if (!gTransport.StartHost(port, error))
@@ -92,6 +93,7 @@ bool StartHost(uint16_t port, std::string* error)
 		gStatus = error ? *error : gTransport.GetLastError();
 		return false;
 	}
+	SetHostAnnouncement(true, playerName, LocalPlatform(), port);
 	gStatus = "Waiting for player";
 	return true;
 }
@@ -111,6 +113,7 @@ bool Connect(const std::string& address, uint16_t port, std::string* error)
 void Stop()
 {
 	gTransport.Disconnect();
+	SetHostAnnouncement(false, "", "", 24800);
 	gReady = false;
 	gHelloSent = false;
 	gSendSequence = 1;
@@ -122,6 +125,9 @@ void Stop()
 
 void Update()
 {
+	// Discovery is independent of an active TCP session: clients listen while
+	// browsing Who Are You?, and hosts periodically announce their game.
+	UpdateDiscovery(SDL_GetTicks());
 	const TransportState before = gTransport.GetState();
 	gTransport.Poll();
 	const TransportState state = gTransport.GetState();
@@ -203,4 +209,5 @@ bool IsReady() { return gReady && gTransport.IsConnected(); }
 std::string GetStatus() { return gStatus; }
 std::string GetLocalPlatform() { return LocalPlatform(); }
 std::string GetPeerPlatform() { return gPeerPlatform; }
+std::vector<DiscoveredGame> GetDiscoveredGames() { return PvZNetwork::GetNetworkGames(); }
 }

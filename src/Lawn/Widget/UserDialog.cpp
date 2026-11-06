@@ -31,6 +31,7 @@
 #include "../../PvzpLib/PvzpStringFile.h"
 #include "widget/ListWidget.h"
 #include "../System/NetworkSession.h"
+#include "../System/NetworkDiscovery.h"
 
 static constexpr ListWidgetColorScheme gUserListWidgetColors{
 	.mBkg = Color(23, 24, 35),
@@ -81,7 +82,10 @@ UserDialog::UserDialog(LawnApp* theApp) : LawnDialog(theApp, Dialogs::DIALOG_USE
 	if (mNumUsers < 8)
 	{
 		mUserList->AddLine(mApp->GetString("CREATE_NEW_USER", "(Create a New User)"), false);
+		mHasCreateUserRow = true;
 	}
+	mNetworkListStart = mUserList->GetLineCount();
+	RefreshNetworkGames();
 
 	mTallBottom = true;
 	CalcSize(210, 310);
@@ -98,6 +102,52 @@ void UserDialog::Resize(int theX, int theY, int theWidth, int theHeight)
 	mCreateButton->Layout(LayoutFlags::LAY_SameLeft | LayoutFlags::LAY_Above | LayoutFlags::LAY_SameHeight | LayoutFlags::LAY_SameWidth, mRenameButton.get(), 0, 0, 0, 0);
 	mJoinButton->Layout(LayoutFlags::LAY_SameLeft | LayoutFlags::LAY_Above | LayoutFlags::LAY_SameHeight | LayoutFlags::LAY_SameWidth, mDeleteButton.get(), 0, 0, 0, 0);
 	mJoinAddressEdit->Resize(GetLeft() + 30, GetTop() + 215, GetWidth() - 60, 28);
+}
+
+void UserDialog::Update()
+{
+	LawnDialog::Update();
+	// Refresh the visible LAN/VPN list twice per second without rebuilding the
+	// local profile rows or disturbing a selected local user.
+	if (++mDiscoveryRefreshFrames >= 30)
+	{
+		mDiscoveryRefreshFrames = 0;
+		RefreshNetworkGames();
+	}
+}
+
+void UserDialog::RefreshNetworkGames()
+{
+	const int oldSelection = mUserList->mSelectIdx;
+	const std::string oldSelectedLine = (oldSelection >= mNetworkListStart && oldSelection < mUserList->GetLineCount())
+		? mUserList->GetStringAt(oldSelection) : std::string();
+	while (mUserList->GetLineCount() > mNetworkListStart)
+		mUserList->RemoveLine(mUserList->GetLineCount() - 1);
+
+	mUserList->AddLine("--- NETWORK GAMES ---", false);
+	const std::vector<PvZNetwork::DiscoveredGame> games = PvZNetwork::GetDiscoveredGames();
+	mNetworkGameCount = static_cast<int>(games.size());
+	if (games.empty())
+	{
+		mUserList->AddLine("Searching for games...", false);
+		mUserList->SetLineColor(mUserList->GetLineCount() - 1, Color(170, 170, 170));
+	}
+	else
+	{
+		for (const auto& game : games)
+		{
+			std::string shortName = game.name.substr(0, 18);
+			std::string shortPlatform = game.platform.substr(0, 8);
+			std::string label = shortName + " (" + shortPlatform + ") " + game.address;
+			mUserList->AddLine(label, false);
+		}
+	}
+	if (oldSelection >= 0 && oldSelection < mNetworkListStart)
+		mUserList->SetSelect(oldSelection);
+	else if (!oldSelectedLine.empty())
+		mUserList->SetSelect(mUserList->GetLineIdx(oldSelectedLine));
+	else
+		mUserList->SetSelect(-1);
 }
 
 int UserDialog::GetPreferredHeight(int theWidth)
@@ -142,19 +192,20 @@ void UserDialog::FinishDeleteUser()
 {
 	int aSelIdx = mUserList->mSelectIdx;
 	mUserList->RemoveLine(mUserList->mSelectIdx);
-
-	aSelIdx--;
-	aSelIdx = std::max(aSelIdx, 0);
-	if (mUserList->GetLineCount() > 0)
-	{
-		mUserList->SetSelect(aSelIdx);
-	}
-
 	mNumUsers--;
-	if (mNumUsers == 7)
+	if (aSelIdx < mNetworkListStart)
+		--mNetworkListStart;
+	while (mUserList->GetLineCount() > mNetworkListStart)
+		mUserList->RemoveLine(mUserList->GetLineCount() - 1);
+	if (mNumUsers == 7 && !mHasCreateUserRow)
 	{
 		mUserList->AddLine(mApp->GetString("CREATE_NEW_USER", "(Create a New User)"), false);
+		mHasCreateUserRow = true;
 	}
+	mNetworkListStart = mUserList->GetLineCount();
+	if (mUserList->GetLineCount() > 0)
+		mUserList->SetSelect(std::max(aSelIdx - 1, 0));
+	RefreshNetworkGames();
 }
 
 void UserDialog::FinishRenameUser(const std::string& theNewName)
@@ -192,17 +243,21 @@ void UserDialog::Draw(Graphics* g)
 
 void UserDialog::ListClicked([[maybe_unused]] int theId, int theIdx, int theClickCount)
 {
-	if (theIdx == mNumUsers)
+	if (mHasCreateUserRow && theIdx == mNumUsers)
 	{
 		mApp->DoCreateUserDialog();
+	}
+	else if (theIdx >= mNetworkListStart)
+	{
+		// Network entries are informational in discovery stage 1. Stage 2 will
+		// bind these rows to Join; they must not be treated as local profiles.
+		mUserList->SetSelect(theIdx);
 	}
 	else
 	{
 		mUserList->SetSelect(theIdx);
 		if (theClickCount == 2)
-		{
 			mApp->FinishUserDialog(true);
-		}
 	}
 }
 
@@ -223,7 +278,8 @@ void UserDialog::ButtonDepress(int theId)
 			mJoinAddressVisible = false;
 		}
 		std::string anError;
-		if (PvZNetwork::StartHost(24800, &anError))
+		const std::string aPlayerName = mApp->mPlayerInfo ? mApp->mPlayerInfo->mName : "Player";
+		if (PvZNetwork::StartHost(24800, &anError, aPlayerName))
 		{
 			mApp->DoDialog(Dialogs::DIALOG_MESSAGE, true, "Network Game", "Hosting on port 24800. Share your IP address with the other player.", "[DIALOG_BUTTON_OK]", Dialog::BUTTONS_FOOTER);
 		}

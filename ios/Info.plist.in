@@ -43,6 +43,8 @@
 	<true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Find and join Plants vs. Zombies multiplayer games on your local network or VPN.</string>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UIFileSharingEnabled</key>

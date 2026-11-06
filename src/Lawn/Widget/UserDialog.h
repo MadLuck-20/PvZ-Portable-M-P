@@ -26,6 +26,7 @@
 #include "widget/ListListener.h"
 #include "widget/EditListener.h"
 #include <memory>
+#include <cstdint>
 
 namespace Sexy
 {
@@ -53,12 +54,17 @@ public:
 	std::unique_ptr<EditWidget>	mJoinAddressEdit;
 	bool					mJoinAddressVisible = false;
 	int					mNumUsers;
+	int					mNetworkListStart = 0;
+	int					mNetworkGameCount = 0;
+	int					mDiscoveryRefreshFrames = 0;
+	bool					mHasCreateUserRow = false;
 
 public:
 	UserDialog(LawnApp* theApp);
 	~UserDialog() override;
 
 	void				Resize(int theX, int theY, int theWidth, int theHeight) override;
+	void				Update() override;
 	int					GetPreferredHeight(int theWidth) override;
 	void				AddedToManager(WidgetManager* theWidgetManager) override;
 	void				RemovedFromManager(WidgetManager* theWidgetManager) override;
@@ -72,6 +78,7 @@ public:
 	void				FinishDeleteUser();
 	void				FinishRenameUser(const std::string& theNewName);
 	std::string			GetSelName();
+	void				RefreshNetworkGames();
 };
 
 #endif
