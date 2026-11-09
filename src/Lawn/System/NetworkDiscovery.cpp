@@ -1,6 +1,7 @@
 #include "NetworkDiscovery.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <map>
 #include <string>
@@ -59,7 +60,9 @@ namespace
 #endif
 	constexpr uint16_t kDiscoveryPort = 24801;
 	constexpr uint32_t kDiscoveryMagic = 0x50565A44; // PVZD
-	constexpr uint8_t kDiscoveryVersion = 1;
+	constexpr uint8_t kDiscoveryVersion = 2;
+	constexpr uint8_t kPacketProbe = 1;
+	constexpr uint8_t kPacketAnnouncement = 2;
 	constexpr uint32_t kGameTimeoutMs = 5000;
 	constexpr uint32_t kAnnounceIntervalMs = 1000;
 
@@ -78,13 +81,18 @@ namespace
 	uint32_t gInstanceId = 0;
 	uint32_t gLastAnnouncement = 0;
 	bool gHasAnnouncementTime = false;
+	uint32_t gLastProbe = 0;
+	bool gHasProbeTime = false;
 
 	uint32_t MakeInstanceId()
 	{
-		// A per-process identifier is sufficient for filtering this device's own beacon.
-		uint32_t value = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&gSocket));
-		value ^= static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&gGames) >> 4);
-		value ^= 0x9E3779B9u;
+		// Mix a time-based value with process-local addresses so two devices running
+		// the same build do not normally advertise the same identifier.
+		const auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+		uint64_t mixed = static_cast<uint64_t>(now);
+		mixed ^= static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&gSocket)) << 7;
+		mixed ^= static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&gGames)) >> 3;
+		uint32_t value = static_cast<uint32_t>(mixed ^ (mixed >> 32));
 		return value ? value : 1u;
 	}
 
@@ -143,6 +151,16 @@ namespace
 	uint16_t Read16(const uint8_t* p) { return static_cast<uint16_t>((uint16_t(p[0]) << 8) | p[1]); }
 	uint32_t Read32(const uint8_t* p) { return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]); }
 
+	std::vector<uint8_t> MakeProbe()
+	{
+		std::vector<uint8_t> packet;
+		packet.reserve(6);
+		Append32(packet, kDiscoveryMagic);
+		packet.push_back(kDiscoveryVersion);
+		packet.push_back(kPacketProbe);
+		return packet;
+	}
+
 	std::vector<uint8_t> MakeAnnouncement()
 	{
 		const std::string name = gPlayerName.substr(0, 48);
@@ -151,6 +169,7 @@ namespace
 		packet.reserve(14 + name.size() + platform.size());
 		Append32(packet, kDiscoveryMagic);
 		packet.push_back(kDiscoveryVersion);
+		packet.push_back(kPacketAnnouncement);
 		Append16(packet, gGamePort);
 		Append32(packet, gInstanceId);
 		packet.push_back(static_cast<uint8_t>(name.size()));
@@ -206,6 +225,57 @@ namespace
 	#endif
 	}
 
+	void SendUnicastProbes()
+	{
+#if !defined(_WIN32)
+		ifaddrs* interfaces = nullptr;
+		if (getifaddrs(&interfaces) != 0)
+			return;
+
+		const std::vector<uint8_t> probe = MakeProbe();
+		for (ifaddrs* it = interfaces; it; it = it->ifa_next)
+		{
+			if (!it->ifa_addr || it->ifa_addr->sa_family != AF_INET ||
+				!(it->ifa_flags & IFF_UP) || (it->ifa_flags & IFF_LOOPBACK) ||
+				!it->ifa_netmask || it->ifa_netmask->sa_family != AF_INET)
+				continue;
+
+			const auto* local = reinterpret_cast<const sockaddr_in*>(it->ifa_addr);
+			const auto* maskAddr = reinterpret_cast<const sockaddr_in*>(it->ifa_netmask);
+			uint32_t mask = ntohl(maskAddr->sin_addr.s_addr);
+			int prefix = 0;
+			bool zeroSeen = false;
+			for (int bit = 31; bit >= 0; --bit)
+			{
+				const bool set = (mask & (uint32_t(1) << bit)) != 0;
+				if (set && zeroSeen) { prefix = -1; break; }
+				if (set) ++prefix; else zeroSeen = true;
+			}
+			// Mobile VPN APIs sometimes expose a host route (/32). In that case
+			// probe the common /24 managed-address range rather than doing no scan.
+			if (prefix < 24 || prefix > 30)
+				prefix = 24;
+
+			const uint32_t ip = ntohl(local->sin_addr.s_addr);
+			const uint32_t subnetMask = prefix == 0 ? 0 : (0xFFFFFFFFu << (32 - prefix));
+			const uint32_t network = ip & subnetMask;
+			const uint32_t broadcast = network | ~subnetMask;
+			for (uint32_t host = network + 1; host < broadcast; ++host)
+			{
+				if (host == ip)
+					continue;
+				sockaddr_in destination{};
+				destination.sin_family = AF_INET;
+				destination.sin_port = htons(kDiscoveryPort);
+				destination.sin_addr.s_addr = htonl(host);
+				sendto(gSocket, probe.data(), probe.size(), 0,
+					reinterpret_cast<const sockaddr*>(&destination), sizeof(destination));
+			}
+		}
+		freeifaddrs(interfaces);
+#endif
+	}
+
 	void ReceiveAnnouncements(uint32_t now)
 	{
 		uint8_t buffer[256];
@@ -221,16 +291,31 @@ namespace
 			const int count = static_cast<int>(recvfrom(gSocket, buffer, sizeof(buffer), 0,
 				reinterpret_cast<sockaddr*>(&source), &sourceLength));
 		#endif
-			if (count < 13)
+			if (count < 0)
 				break;
-			if (Read32(buffer) != kDiscoveryMagic || buffer[4] != kDiscoveryVersion)
+			if (count < 6 || Read32(buffer) != kDiscoveryMagic ||
+				buffer[4] != kDiscoveryVersion)
 				continue;
-			const uint16_t port = Read16(buffer + 5);
-			const uint32_t id = Read32(buffer + 7);
-			const uint8_t nameLength = buffer[11];
-			const uint8_t platformLength = buffer[12];
+
+			if (buffer[5] == kPacketProbe)
+			{
+				if (count == 6 && gAnnouncing)
+				{
+					const std::vector<uint8_t> response = MakeAnnouncement();
+					sendto(gSocket, response.data(), response.size(), 0,
+						reinterpret_cast<const sockaddr*>(&source), sizeof(source));
+				}
+				continue;
+			}
+			if (buffer[5] != kPacketAnnouncement || count < 14)
+				continue;
+
+			const uint16_t port = Read16(buffer + 6);
+			const uint32_t id = Read32(buffer + 8);
+			const uint8_t nameLength = buffer[12];
+			const uint8_t platformLength = buffer[13];
 			if (id == 0 || id == gInstanceId || nameLength > 48 || platformLength > 24 ||
-				13 + nameLength + platformLength != count || port == 0)
+				14 + nameLength + platformLength != count || port == 0)
 				continue;
 			char addressText[INET_ADDRSTRLEN] = {};
 			if (!inet_ntop(AF_INET, &source.sin_addr, addressText, sizeof(addressText)))
@@ -239,8 +324,8 @@ namespace
 			entry.game.id = id;
 			entry.game.port = port;
 			entry.game.address = addressText;
-			entry.game.name.assign(reinterpret_cast<char*>(buffer + 13), nameLength);
-			entry.game.platform.assign(reinterpret_cast<char*>(buffer + 13 + nameLength), platformLength);
+			entry.game.name.assign(reinterpret_cast<char*>(buffer + 14), nameLength);
+			entry.game.platform.assign(reinterpret_cast<char*>(buffer + 14 + nameLength), platformLength);
 			entry.lastSeen = now;
 		}
 	}
@@ -255,6 +340,8 @@ void StopDiscovery()
 	gGames.clear();
 	gAnnouncing = false;
 	gHasAnnouncementTime = false;
+	gHasProbeTime = false;
+	gHasProbeTime = false;
 }
 
 void SetHostAnnouncement(bool enabled, const std::string& playerName, const std::string& platform, uint16_t gamePort)
@@ -271,6 +358,12 @@ void UpdateDiscovery(uint32_t ticks)
 	if (!EnsureSocket(nullptr))
 		return;
 	ReceiveAnnouncements(ticks);
+	if (!gHasProbeTime || ticks - gLastProbe >= 2500)
+	{
+		SendUnicastProbes();
+		gLastProbe = ticks;
+		gHasProbeTime = true;
+	}
 	if (gAnnouncing && (!gHasAnnouncementTime || ticks - gLastAnnouncement >= kAnnounceIntervalMs))
 	{
 		SendAnnouncement(MakeAnnouncement());
