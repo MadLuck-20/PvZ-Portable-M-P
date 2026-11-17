@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstring>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -81,8 +82,18 @@ namespace
 	uint32_t gInstanceId = 0;
 	uint32_t gLastAnnouncement = 0;
 	bool gHasAnnouncementTime = false;
-	uint32_t gLastProbe = 0;
-	bool gHasProbeTime = false;
+	std::vector<uint32_t> gProbeTargets;
+	size_t gProbeTargetIndex = 0;
+	uint32_t gLastInterfaceRefresh = 0;
+	bool gHasInterfaceRefresh = false;
+	uint64_t gProbeSent = 0;
+	uint64_t gProbeSendErrors = 0;
+	uint64_t gProbeReceived = 0;
+	uint64_t gAnnouncementsReceived = 0;
+	uint64_t gAnnouncementsSent = 0;
+	int gLastProbeError = 0;
+	int gInterfaceCount = 0;
+	std::vector<std::string> gInterfaceDescriptions;
 
 	uint32_t MakeInstanceId()
 	{
@@ -225,54 +236,94 @@ namespace
 	#endif
 	}
 
-	void SendUnicastProbes()
+	int GetPrefixLength(uint32_t mask)
 	{
+		int prefix = 0;
+		bool zeroSeen = false;
+		for (int bit = 31; bit >= 0; --bit)
+		{
+			const bool set = (mask & (uint32_t(1) << bit)) != 0;
+			if (set && zeroSeen) return -1;
+			if (set) ++prefix; else zeroSeen = true;
+		}
+		return prefix;
+	}
+
+	void RefreshProbeTargets(uint32_t ticks)
+	{
+		gProbeTargets.clear();
+		gProbeTargetIndex = 0;
+		gInterfaceDescriptions.clear();
+		gInterfaceCount = 0;
 #if !defined(_WIN32)
 		ifaddrs* interfaces = nullptr;
 		if (getifaddrs(&interfaces) != 0)
+		{
+			gLastProbeError = errno;
 			return;
-
-		const std::vector<uint8_t> probe = MakeProbe();
+		}
 		for (ifaddrs* it = interfaces; it; it = it->ifa_next)
 		{
 			if (!it->ifa_addr || it->ifa_addr->sa_family != AF_INET ||
 				!(it->ifa_flags & IFF_UP) || (it->ifa_flags & IFF_LOOPBACK) ||
 				!it->ifa_netmask || it->ifa_netmask->sa_family != AF_INET)
 				continue;
-
 			const auto* local = reinterpret_cast<const sockaddr_in*>(it->ifa_addr);
 			const auto* maskAddr = reinterpret_cast<const sockaddr_in*>(it->ifa_netmask);
-			uint32_t mask = ntohl(maskAddr->sin_addr.s_addr);
-			int prefix = 0;
-			bool zeroSeen = false;
-			for (int bit = 31; bit >= 0; --bit)
-			{
-				const bool set = (mask & (uint32_t(1) << bit)) != 0;
-				if (set && zeroSeen) { prefix = -1; break; }
-				if (set) ++prefix; else zeroSeen = true;
-			}
-			// Mobile VPN APIs sometimes expose a host route (/32). In that case
-			// probe the common /24 managed-address range rather than doing no scan.
-			if (prefix < 24 || prefix > 30)
-				prefix = 24;
-
 			const uint32_t ip = ntohl(local->sin_addr.s_addr);
+			int prefix = GetPrefixLength(ntohl(maskAddr->sin_addr.s_addr));
+			if (prefix < 0) continue;
+			// A /32 VPN interface has no peer subnet in getifaddrs. Keep the
+			// previous /24 fallback, but preserve real wider masks such as /16.
+			if (prefix > 30) prefix = 24;
+			char addressText[INET_ADDRSTRLEN] = {};
+			char maskText[INET_ADDRSTRLEN] = {};
+			inet_ntop(AF_INET, &local->sin_addr, addressText, sizeof(addressText));
+			inet_ntop(AF_INET, &maskAddr->sin_addr, maskText, sizeof(maskText));
+			std::ostringstream description;
+			description << (it->ifa_name ? it->ifa_name : "?") << " " << addressText << "/" << prefix;
+			gInterfaceDescriptions.push_back(description.str());
+			++gInterfaceCount;
+			// Avoid accidentally flooding a very large corporate/mobile subnet.
+			// /16 (65k addresses) is supported incrementally; broader ranges are
+			// reported rather than scanned blindly.
+			if (prefix < 16) continue;
 			const uint32_t subnetMask = prefix == 0 ? 0 : (0xFFFFFFFFu << (32 - prefix));
 			const uint32_t network = ip & subnetMask;
 			const uint32_t broadcast = network | ~subnetMask;
 			for (uint32_t host = network + 1; host < broadcast; ++host)
 			{
-				if (host == ip)
-					continue;
-				sockaddr_in destination{};
-				destination.sin_family = AF_INET;
-				destination.sin_port = htons(kDiscoveryPort);
-				destination.sin_addr.s_addr = htonl(host);
-				sendto(gSocket, probe.data(), probe.size(), 0,
-					reinterpret_cast<const sockaddr*>(&destination), sizeof(destination));
+				if (host != ip) gProbeTargets.push_back(host);
 			}
 		}
 		freeifaddrs(interfaces);
+#endif
+		std::sort(gProbeTargets.begin(), gProbeTargets.end());
+		gProbeTargets.erase(std::unique(gProbeTargets.begin(), gProbeTargets.end()), gProbeTargets.end());
+		gLastInterfaceRefresh = ticks;
+		gHasInterfaceRefresh = true;
+	}
+
+	void SendUnicastProbes()
+	{
+#if !defined(_WIN32)
+		if (gProbeTargets.empty()) return;
+		const std::vector<uint8_t> probe = MakeProbe();
+		// Send a bounded batch each game update. This lets a /16 ZeroTier
+		// network be scanned over time instead of forcing it into a /24.
+		constexpr size_t kProbeBatchSize = 128;
+		for (size_t sentThisFrame = 0; sentThisFrame < kProbeBatchSize && !gProbeTargets.empty(); ++sentThisFrame)
+		{
+			if (gProbeTargetIndex >= gProbeTargets.size()) gProbeTargetIndex = 0;
+			sockaddr_in destination{};
+			destination.sin_family = AF_INET;
+			destination.sin_port = htons(kDiscoveryPort);
+			destination.sin_addr.s_addr = htonl(gProbeTargets[gProbeTargetIndex++]);
+			const int result = static_cast<int>(sendto(gSocket, probe.data(), probe.size(), 0,
+				reinterpret_cast<const sockaddr*>(&destination), sizeof(destination)));
+			if (result == static_cast<int>(probe.size())) ++gProbeSent;
+			else { ++gProbeSendErrors; gLastProbeError = DiscoverySocketError(); }
+		}
 #endif
 	}
 
@@ -299,17 +350,24 @@ namespace
 
 			if (buffer[5] == kPacketProbe)
 			{
-				if (count == 6 && gAnnouncing)
+				if (count == 6)
 				{
-					const std::vector<uint8_t> response = MakeAnnouncement();
-					sendto(gSocket, response.data(), response.size(), 0,
-						reinterpret_cast<const sockaddr*>(&source), sizeof(source));
+					++gProbeReceived;
+					if (gAnnouncing)
+					{
+						const std::vector<uint8_t> response = MakeAnnouncement();
+						const int sent = static_cast<int>(sendto(gSocket, response.data(), response.size(), 0,
+							reinterpret_cast<const sockaddr*>(&source), sizeof(source)));
+						if (sent == static_cast<int>(response.size())) ++gAnnouncementsSent;
+						else gLastProbeError = DiscoverySocketError();
+					}
 				}
 				continue;
 			}
 			if (buffer[5] != kPacketAnnouncement || count < 14)
 				continue;
 
+			++gAnnouncementsReceived;
 			const uint16_t port = Read16(buffer + 6);
 			const uint32_t id = Read32(buffer + 8);
 			const uint8_t nameLength = buffer[12];
@@ -340,8 +398,13 @@ void StopDiscovery()
 	gGames.clear();
 	gAnnouncing = false;
 	gHasAnnouncementTime = false;
-	gHasProbeTime = false;
-	gHasProbeTime = false;
+	gProbeTargets.clear();
+	gProbeTargetIndex = 0;
+	gHasInterfaceRefresh = false;
+	gProbeSent = gProbeSendErrors = gProbeReceived = gAnnouncementsReceived = gAnnouncementsSent = 0;
+	gLastProbeError = 0;
+	gInterfaceCount = 0;
+	gInterfaceDescriptions.clear();
 }
 
 void SetHostAnnouncement(bool enabled, const std::string& playerName, const std::string& platform, uint16_t gamePort)
@@ -358,12 +421,9 @@ void UpdateDiscovery(uint32_t ticks)
 	if (!EnsureSocket(nullptr))
 		return;
 	ReceiveAnnouncements(ticks);
-	if (!gHasProbeTime || ticks - gLastProbe >= 2500)
-	{
-		SendUnicastProbes();
-		gLastProbe = ticks;
-		gHasProbeTime = true;
-	}
+	if (!gHasInterfaceRefresh || ticks - gLastInterfaceRefresh >= 15000)
+		RefreshProbeTargets(ticks);
+	SendUnicastProbes();
 	if (gAnnouncing && (!gHasAnnouncementTime || ticks - gLastAnnouncement >= kAnnounceIntervalMs))
 	{
 		SendAnnouncement(MakeAnnouncement());
@@ -388,5 +448,30 @@ std::vector<DiscoveredGame> GetNetworkGames()
 	std::sort(games.begin(), games.end(), [](const DiscoveredGame& a, const DiscoveredGame& b)
 		{ return a.name < b.name || (a.name == b.name && a.address < b.address); });
 	return games;
+}
+
+std::vector<std::string> GetDiscoveryDiagnostics()
+{
+	std::vector<std::string> lines;
+	std::ostringstream interfaces;
+	interfaces << "IPv4 interfaces: " << gInterfaceCount;
+	for (const std::string& item : gInterfaceDescriptions)
+		interfaces << " | " << item;
+	lines.push_back(interfaces.str());
+	std::ostringstream probes;
+	probes << "UDP probes: " << gProbeSent << " sent, " << gProbeSendErrors << " errors";
+	lines.push_back(probes.str());
+	std::ostringstream hostReplies;
+	hostReplies << "Host responses sent: " << gAnnouncementsSent;
+	lines.push_back(hostReplies.str());
+	std::ostringstream replies;
+	replies << "Received: " << gProbeReceived << " probes, " << gAnnouncementsReceived << " game announcements";
+	lines.push_back(replies.str());
+	std::ostringstream targets;
+	targets << "Scan targets: " << gProbeTargets.size() << " (port " << kDiscoveryPort << ")";
+	lines.push_back(targets.str());
+	if (gLastProbeError != 0)
+		lines.push_back("Last UDP error: " + std::to_string(gLastProbeError));
+	return lines;
 }
 }

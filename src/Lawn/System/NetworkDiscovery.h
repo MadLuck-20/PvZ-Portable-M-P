@@ -22,6 +22,7 @@ namespace PvZNetwork
 	void SetHostAnnouncement(bool enabled, const std::string& playerName, const std::string& platform, uint16_t gamePort);
 	void UpdateDiscovery(uint32_t ticks);
 	std::vector<DiscoveredGame> GetNetworkGames();
+	std::vector<std::string> GetDiscoveryDiagnostics();
 }
 
 #endif

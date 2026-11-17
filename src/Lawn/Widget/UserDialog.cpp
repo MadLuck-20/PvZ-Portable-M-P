@@ -142,6 +142,13 @@ void UserDialog::RefreshNetworkGames()
 			mUserList->AddLine(label, false);
 		}
 	}
+	// Keep diagnostics inside the scrollable list instead of drawing them
+	// underneath the dialog buttons, where they were clipped on mobile.
+	const int diagnosticsStart = mUserList->GetLineCount();
+	for (const std::string& line : PvZNetwork::GetDiscoveryDiagnostics())
+		mUserList->AddLine(line, false);
+	for (int i = diagnosticsStart; i < mUserList->GetLineCount(); ++i)
+		mUserList->SetLineColor(i, Color(170, 170, 170));
 	if (oldSelection >= 0 && oldSelection < mNetworkListStart)
 		mUserList->SetSelect(oldSelection);
 	else if (!oldSelectedLine.empty())
